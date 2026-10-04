@@ -1,0 +1,14 @@
+[Unit]
+Description=Android in the browser: firewall for the device network
+After=docker.service
+Requires=docker.service
+Before=android-web.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/android-web.env
+ExecStart=/bin/bash /opt/android-web/infra/device-firewall.sh
+
+[Install]
+WantedBy=multi-user.target

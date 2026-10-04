@@ -1029,3 +1029,153 @@ Limits stated in LATENCY.md: one client, one network, one browser, one session; 
 **Documents:** README.md has a "Clock-only mode" section with the reasons for Clock, the allowed actions, the three enforcement layers, an escape-route table with results, and the weak points.
 
 **Not committed** (the user commits; message supplied in chat).
+
+---
+
+## Entry 47 — Sun 4 Oct 2026, 15:30 IST
+
+**User prompt (verbatim):**
+
+> now tell should i stop instance an delstic ip?
+
+**What the AI did:** advised, without changing anything: (1) never release the Elastic IP, because the public link's host name is built from that address and a released address cannot be got back; (2) stopping the instance is safe while the user is not working and before submission: the address stays, and the site starts by itself when the instance starts again (tested for a reboot in Entry 38; a stop and start with the Elastic IP attached has not been tested yet); (3) from submission until the evaluation is over the instance must stay running, because the assignment requires the link to be available throughout; (4) to set a billing alert. Costs were given from memory and marked as not checked.
+
+**Waiting on the user:** their choice; a fresh server for the C4 proof; hours for K7.
+
+---
+
+## Entry 48 — Sun 4 Oct 2026, 16:19 IST
+
+**User prompt (verbatim):** the user ran the slash command `/ecc:benchmark-methodology` with no arguments.
+
+**What the command is:** a skill for scoring competing agencies or studios on nine marketing dimensions (positioning, brand voice, visual identity, pricing transparency and so on) and producing competitor profile cards. It expects a scoped list of competitors and a client positioning brief as inputs.
+
+**What the AI did:** did not run it. Neither input exists in this project, the skill's own text says not to run it without them, and inventing competitors and scores would be made-up content in a repo where the log is graded. The AI told the user this, and asked which of three things they meant: (1) a performance benchmark of the deployed app, in particular three sessions in use at once, which is still unmeasured; (2) a comparison of this design against the alternatives (emulator, Cuttlefish, ws-scrcpy) for the architecture write-up; (3) the marketing-style competitor benchmark the command is actually for.
+
+**Waiting on the user:** which of the three.
+
+---
+
+## Entry 49 — Sun 4 Oct 2026, 16:51 IST
+
+**User prompt (verbatim):** the user ran the slash command `/ecc:security-review` with no arguments.
+
+**State found:** the user committed the previous work (1894068). The server does not answer on SSH or HTTPS, so the AI assumes the user stopped the instance (Entry 47). Because of that, this review is from reading the code only; nothing was probed on the server.
+
+**What the AI did:** went through the skill's checklist against the code and ran what can run on the laptop: a search for unsafe page patterns (innerHTML, eval: none found), a search for secrets in the repo (none found), and `npm audit --omit=dev` (0 vulnerabilities; one dependency, ws). This is again a self-review by the AI that wrote the code.
+
+**Findings reported to the user (no code changed):**
+
+- CRITICAL (reasoned from how redroid and Docker work; the two key facts are NOT yet confirmed on the server): the site is open to anyone, the full-device mode lets a visitor browse the web and install apps, the device's own debugging service (adbd on port 5555) is believed to accept unauthenticated connections from apps on the same device and to run as root, and the device container is privileged. Chained together, an anonymous visitor could plausibly get root inside the container and from there reach the host. The AI flagged privileged containers as a weakness before (Entries 36, 39) but had not thought through the route from an anonymous visitor to it until this review.
+- HIGH: no limit per visitor address on creating sessions, so one person or bot can hold all three devices; devices can reach the cloud metadata address and the private network (not confirmed; depends on AWS settings the AI has not checked).
+- MEDIUM: no content security policy; no CPU limit per device, so one device can starve the others; the restricted-mode check runs only while a viewer is attached; the backend user is in the docker group; the user's home IP address is written in this log, which will be public.
+- LOW: session token and access code travel in the WebSocket address; /healthz is public; Android 12 image with an old security patch level.
+- Checked and found sound: input validation and the server-side allow-list, the origin check, constant-time code comparison, static file allow-list, ADB ports bound to localhost, no secrets in the repo, no unsafe DOM writes.
+
+**Proposed fixes, not applied (they change how devices are set up and need the server to test):** block connections to the debugging port from inside the device, disable the package installer and the browser shell on devices or make Clock-only the default mode, block the metadata address and private ranges for the device network, a per-address session limit, a CPU limit per device, a content security policy.
+
+**Waiting on the user:** start the instance so the two unconfirmed facts can be checked and the fixes applied and tested; decide whether the full-device mode should stay open to anonymous visitors.
+
+---
+
+## Entry 50 — Sun 4 Oct 2026, 16:54 IST
+
+**User prompt (verbatim):**
+
+> from core and bonus tell what is left behind
+
+**What the AI did:** reported in chat what remains among the core requirements and the bonuses only. Summary given: every core requirement and four of the five bonuses (B1, B2, B3, B4) are built and were shown working on the public link. Not built: B5 session recording (never chosen as committed). Not finished: C4 (the setup script has not run on a brand-new server). Unverified parts inside finished items: other browsers and a phone, three people at once, a 10 minute run and a network cut for C1, a real click on Paste for B3, a person freely trying to escape Clock-only mode for B4, long-press and some keys for C2. Also stated that the instance is stopped, so the public link (C5) is down right now, and that the security review's critical finding is still open.
+
+**No code changed.**
+
+---
+
+## Entry 51 — Sun 4 Oct 2026, 16:56 IST
+
+**User prompt (verbatim):** the user ran the slash command `/ecc:strategic-compact` with no arguments.
+
+**What the AI did:** advised that now is a good point to compact the session (the context is about 620 thousand tokens; the build work for C1 to C5 and B1 to B4 is finished and committed; the next work is separate: security fixes, documents, video). Before that, saved the server access details, the deploy procedure and the tool quirks to its project memory so they survive, and gave the user a ready /compact line listing the open items. The compact command itself is run by the user; the AI cannot run it.
+
+**Open items carried forward:** confirm and fix the critical security finding (Entry 49); C4 on a brand-new server; B5 undecided; architecture write-up, "what went wrong", "with more time", the user's own-words section, demo video; push the repo; the user's hours for K7; the user's reasons for the architecture and bonus choices (still missing since Entries 1 and 22); a real click on Paste and a hands-on attempt to escape Clock-only mode.
+
+---
+
+## Entry 52 — Sun 4 Oct 2026, 17:18 to 17:50 IST
+
+**User prompt (verbatim):**
+
+> build things which are left and ask what is need with options
+
+(Before this the user ran `/compact` with the open-items list from Entry 51.)
+
+**State found:** the instance is still stopped (the public link timed out at 17:18 and again at about 17:35), so nothing below has run on the server.
+
+**What the AI built, locally:**
+
+1. Security fences for the chain in Entry 49 (code written; server test pending):
+   - `backend/src/hardening.js`: on every new device, a firewall rule inside the device so its debugging port (5555) only accepts connections arriving from the server, and two Android user restrictions that forbid installing apps.
+   - `infra/device-firewall.sh` and `infra/android-web-firewall.service`: host firewall for the device network. Devices cannot open connections to the server itself, private network ranges or the metadata address 169.254.169.254; DNS is let through; `DEVICE_INTERNET=off` cuts all internet access from devices. The device network now has a fixed bridge name (`awnet0`) so the rules can match it; the backend recreates an older network at start-up.
+   - Per-address limit: at most 2 of the 3 sessions per visitor address (`MAX_SESSIONS_PER_ADDRESS`), using the address the web server writes into X-Forwarded-For; a new close code 4430 and a message on the page. Connections made on the server itself carry no such header and are not limited, so the live tests still work.
+   - CPU limit of 1.5 CPUs per device (`DEVICE_CPUS`).
+   - Content security policy header; the page's inline style block moved to `frontend/style.css` so inline styles can be forbidden.
+   - `scripts/live-security-test.js`: opens a session and, from inside the device, tries the debugging port (three addresses), the metadata address, the server (three ways), an app install, and checks internet access and the CPU limit.
+2. Unit tests: 8 new (per-address limit, visitor address, policy header). `npm test`: 77 pass, 0 fail.
+3. Local check of the content policy: started the real backend on the laptop with Docker calls faked, opened http://localhost:8080 in Chrome. All scripts and the stylesheet loaded, styles applied, the WebSocket connected (the page showed the server's "device failed" reason, as expected with no Docker). Console: no policy violations; one 404 for `/favicon.ico`.
+4. Documents: `ARCHITECTURE.md` (screen path, input path, isolation, restriction, alternatives rejected, licences), `WRITEUP.md` ("What went wrong", "With more time" with scaling and security risks, and an empty section for the user's own words), `DEMO_SCRIPT.md` (timed script for the video). README: new "Security fences" section that says plainly which fences are untested, test count, new settings, layout table.
+
+**Not verified, stated plainly:** everything in `hardening.js` and `device-firewall.sh`. Open questions the server must answer: whether Android's `iptables` works inside the redroid container, whether `pm set-user-restriction` blocks installs, whether name lookups on devices survive the firewall, how much the CPU limit slows device start, and whether the site still comes back after a reboot with the new firewall service. The backend refuses to hand out a device if a fence cannot be applied, so a wrong assumption will show as "device failed" and must be fixed before this version stays deployed.
+
+**Errors on the way:** a shell heredoc with the write-up text failed to parse ("unexpected EOF while looking for matching quote"); the files were written with the file tool instead. `ARCHITECTURE.md` first named `pointerMap.js` (the file is `frontend/pointerMap.mjs`) and called JPEG streaming slower without a measurement; both corrected.
+
+**Asked the user (with options):** whether to build B5 recording; whether devices keep internet access; when the instance and a brand-new test server will be available; the Saturday hours for the time table.
+
+**Correction to the times in Entry 52 (added 17:29 IST):** the work ran from 17:18 to 17:28 IST, and the second check of the public link was at about 17:26, not 17:35. The heading above overstates the end time.
+
+---
+
+## Entry 53 — Sun 4 Oct 2026, 17:29 to 17:48 IST
+
+**User prompt (verbatim):** answers chosen in the AI's question form (Entry 52):
+
+> Should I build B5 (session recording)? = "Build B5"
+> Should the Android devices keep internet access? = "Cut internet (Recommended)"
+> What can you start now? = "setup server script later. I start the existing instance. "
+> How many hours did you spend on Saturday 3 Oct? = "8 hours"
+
+The AI had recommended skipping B5; the user chose to build it.
+
+**What the AI did:**
+
+1. **Confirmed the security finding on the live server (old version still deployed).** Ran the new `scripts/live-security-test.js` against it: 10 of 13 checks failed, which is the confirmation. From inside a device: the debugging port answered on 127.0.0.1, on the device's own address and on IPv6; the AWS metadata address answered; the server's SSH and web ports answered; an app install returned "Success"; no CPU limit.
+2. **Deployed the fences. First run failed.** Every new device ended with "device failed": `pm set-user-restriction` over adb threw `SecurityException: You need MANAGE_USERS permission`. Cause, found on a throwaway container: the adb shell is uid 2000 (`shell`), not root. This also corrects Entry 49, which assumed the debugging shell was root. Fix: set the restriction as root with `docker exec`. The firewall rules inside the device (Android's own iptables and ip6tables) worked at the first attempt. The test script also hung for 90 s instead of reporting the closed session; fixed.
+3. **Second deploy: `live-security-test.js` 12 of 12 pass** (devices now have no internet, so the name-lookup check does not apply). `live-session-test.js` 16 of 16 and `live-restriction-test.js` 15 of 15 still pass. Device ready times in the session test: 8.5 s and 11.6 s (before the CPU limit and fences: 6.3 s and 12.7 s).
+4. **Per-address limit, through the public address from the laptop:** first and second session opened, third closed with 4430 "too many devices for this address".
+5. **Reboot:** after `systemctl reboot`, the firewall service, backend, Docker and Caddy were all active, the firewall rules were present, and the security test passed again. The time to come back was not measured properly (the probe accepted an empty answer at 20 s), so no new number is claimed.
+6. **Changed on the way:** a device start failure used to show its internal error text to the visitor; now the visitor sees "the device could not be started" and the detail goes to the log only.
+7. **B5 session recording, built and checked:**
+   - `backend/src/mp4.js`: a small writer for fragmented MP4 (one piece per frame). `backend/src/recorder.js`: feeds it from the same packets the viewer gets, one file per session, continuing across reconnects. `backend/src/recordings.js`: `GET /recording?session=<token>` (byte ranges, download option), deletion after 24 hours or when the folder passes 2 GB, 200 MB cap per recording. Files live in `/var/lib/android-web/recordings`, readable by the service user only.
+   - Page: after "End session" the recording plays under the message with a download link; a "Recordings of your sessions" list (this browser's sessions of the last 24 hours).
+   - Alternative considered and not used: ffmpeg as a helper process (extra dependency and process per session).
+   - Unit tests: 95 pass (18 new for the writer, recorder and byte ranges).
+   - Live check in Chrome on the public link: ran a session with two swipes, pressed End session; the video element loaded the recording (720 x 1280, 5.1 s, no error), played, seeking worked, a range request returned 206, an unknown token returned 404. Console: only the favicon 404.
+8. Devices without internet is now the default (`DEVICE_INTERNET=on` restores it).
+9. Documents updated: README (recording section, fences status "tested", limits table, 95 tests, Saturday = 8 hours), ARCHITECTURE.md, WRITEUP.md.
+
+**Errors and dead ends:** the adb permission failure above; one unit test expected the old visitor-facing error text and was updated with the behaviour; three shell heredocs failed to parse again (cause still unknown; the content was written through a script file instead).
+
+**Not done or not verified:** the setup script on a brand-new server (the user said later); recording across a rotation, and a recording near the 200 MB cap, were not tried; playback was checked in Chrome only; the demo video; the user's own-words section.
+
+---
+
+## Entry 54 — Sun 4 Oct 2026, 18:22 IST
+
+**User prompt (verbatim):**
+
+> now put .md files in proper folder str. Why we are using android 12.
+
+**What the AI did:**
+
+1. Moved the documents into a docs folder. Kept in the root: README.md, CLAUDE.md (the agent reads it there) and PROCESS_LOG.md (the logging rule says project root). New layout: docs/ holds ARCHITECTURE.md, WRITEUP.md, LATENCY.md and DEMO_SCRIPT.md; docs/notes/ holds RESEARCH.md and NOTES.md; docs/brief/ holds Assignment.md, CHECKLIST.md, PHASE0_GUIDE.md and master_prompt_android_streaming.md. Tracked files were moved with git mv so their history follows. Updated the links and the layout table in the README and one line of the demo script. Older documents and earlier log entries still name files without a folder; those were left as written.
+2. Answered why Android 12: it was not a compared choice. The image tag came from the example in redroid's deployment README when the first experiment was written (spikes/01-boot-redroid.sh says so), it worked, and it was never revisited. No other Android version was tried.
+
+**No code changed. Nothing was run on the server.**

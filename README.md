@@ -10,7 +10,7 @@ No sign-in and nothing to install. Use a current Chrome or Edge on a computer (s
 
 | Feature | How to try it |
 |---|---|
-| Live screen | Open the link. The status goes from "Starting your Android device" to "Live" in about 7 seconds. |
+| Live screen | Open the link. The status goes from "Starting your Android device" to "Live" in about 9 seconds. |
 | Tap, long-press, swipe | Use the mouse or a finger on the screen image. Drags keep working if the pointer leaves the image. |
 | Scroll | Mouse wheel over the screen image. |
 | Type | Click the screen image, then type. Enter, Backspace, Delete, Tab and the arrow keys work. |
@@ -21,6 +21,7 @@ No sign-in and nothing to install. Use a current Chrome or Edge on a computer (s
 | Your own device | Open the link in a second browser window: it gets a different device. Files, settings and apps are not shared. |
 | One app only | Press **Switch to Clock only** (or open the link with `?mode=restricted`). You get a new device locked to the Clock app; see [Clock-only mode](#clock-only-mode). |
 | End a session | **End session** deletes the device at once. Closing the tab deletes it after 30 seconds. Five minutes without input also ends it. |
+| Session recording | Every session is recorded. After **End session** the recording plays under the message, with a download link. **Recordings of your sessions** lists this browser's sessions of the last 24 hours, each with Watch and Download. |
 | Latency test | Open **Latency test** and press **Run 40 taps** with the device on its home screen. |
 
 ## Hosting and limits
@@ -35,7 +36,10 @@ No sign-in and nothing to install. Use a current Chrome or Edge on a computer (s
 | Sessions at once | 3. A fourth visitor sees "All devices are in use" and the page retries by itself. |
 | Idle timeout | 5 minutes without input |
 | After the tab closes | The device is kept for 30 seconds (so a reload or a network drop keeps your device), then deleted |
-| Device | Android 12 (redroid), 720 x 1280, 30 frames per second, software rendering, 2 GB memory limit |
+| Sessions per network address | 2. A third from the same address is told so and the page retries. People behind one office address share this limit. |
+| Device | Android 12 (redroid), 720 x 1280, 30 frames per second, software rendering, 2 GB memory and 1.5 CPU limit |
+| Device network | None. Devices cannot reach the internet, the server or anything else, so the browser app on a device loads no pages. `DEVICE_INTERNET=on` in the settings file is meant to allow the public internet only; that setting has not been run. |
+| Recordings | Kept 24 hours, at most 200 MB each and 2 GB in total (oldest deleted first) |
 | Speed | Starting a device uses most of both CPUs for a few seconds, so three people starting at once will wait longer (two devices started together took about 16 s each). |
 
 The site is open to everyone on purpose. An optional access code exists (`ACCESS_CODE` in `/etc/android-web.env`) and is switched off.
@@ -52,6 +56,16 @@ browser page  <-- HTTPS / WebSocket -->  Caddy  -->  Node backend  -- adb -->  o
 - **One device per user:** each session is its own [redroid](https://github.com/remote-android/redroid-doc) container on a Docker network where containers cannot reach each other.
 
 Everything in the device and streaming path is open source: redroid (Apache-2.0), scrcpy-server (Apache-2.0), Docker, Node.js, the `ws` library (MIT), Caddy (Apache-2.0).
+
+## Session recording
+
+Each session's video is saved on the server as one MP4 file, automatically, from the first frame to the end of the session. It is the device's own H.264 stream written into the file with its timestamps (`backend/src/mp4.js`, `backend/src/recorder.js`); nothing is re-encoded. A page reload or reconnect continues the same file.
+
+- **Tied to its session:** the file is named after the session's id, and `GET /recording?session=<token>` hands it out only for that session's secret token. The token stops controlling anything when the session ends; after that it only opens the recording.
+- **Play back or download:** on the page after **End session**, or later from **Recordings of your sessions** (kept in this browser's local storage). A session that ended because the tab was closed is in that list too.
+- **Kept for** 24 hours. A recording stops at 200 MB, and the oldest are deleted when the folder passes 2 GB.
+- **Tested:** unit tests for the file writer and recorder; on the live server a recorded session played in Chrome with the right size (720 x 1280), seeking worked, and an unknown token got "not found".
+- **Limits:** video only. If the screen is rotated during a session, the file header still states the first size (not tested in a player). A recording cannot be opened from another browser or computer, because only this browser knows the token.
 
 ## Clock-only mode
 
@@ -104,7 +118,7 @@ Tested on AWS with Ubuntu Server 24.04 (x86-64). The kernel must be able to load
 
 The script installs Docker, adb and the kernel module package, loads binder now and at every boot, installs Node.js 22, pulls the Android image, copies the app to `/opt/android-web`, installs a systemd service that restarts on failure and at boot, and configures Caddy for HTTPS. It can be run again safely.
 
-Settings live in `/etc/android-web.env` (`MAX_SESSIONS`, `SESSION_IDLE_MS`, `SESSION_GRACE_MS`, `ACCESS_CODE`, `DEVICE_FPS`, `VIDEO_BIT_RATE`, ...); restart with `sudo systemctl restart android-web`. Logs: `sudo journalctl -u android-web -f`. Health: `curl -s http://127.0.0.1:8080/healthz`.
+Settings live in `/etc/android-web.env` (`MAX_SESSIONS`, `MAX_SESSIONS_PER_ADDRESS`, `DEVICE_CPUS`, `DEVICE_INTERNET`, `SESSION_IDLE_MS`, `SESSION_GRACE_MS`, `ACCESS_CODE`, `DEVICE_FPS`, `VIDEO_BIT_RATE`, ...); restart with `sudo systemctl restart android-web`. Logs: `sudo journalctl -u android-web -f`. Health: `curl -s http://127.0.0.1:8080/healthz`.
 
 **Not yet proven:** the script has run several times on one server that already had Docker, Node.js and the Android image from earlier manual work. It has not been run on a brand-new server.
 
@@ -114,25 +128,42 @@ Settings live in `/etc/android-web.env` (`MAX_SESSIONS`, `SESSION_IDLE_MS`, `SES
 cd backend && npm install && npm test
 ```
 
-69 unit tests: the scrcpy video and device-message parsers, the control-message encoder (checked against scrcpy's own test vectors), position mapping at several window sizes, session rules (limit, grace time, idle timeout, fixed mode), the restricted-mode input list, and the latency statistics. They need no device.
+95 unit tests: the scrcpy video and device-message parsers, the control-message encoder (checked against scrcpy's own test vectors), position mapping at several window sizes, session rules (limit, limit per address, grace time, idle timeout, fixed mode), the restricted-mode input list, the response headers, the MP4 writer and recorder, and the latency statistics. They need no device.
 
-On the server, two live tests open real sessions. Run them when nobody else is using the site:
+On the server, live tests open real sessions. Run them when nobody else is using the site:
 
 ```bash
 # isolation between users and cleanup of devices (16 checks)
 sudo /opt/node/bin/node /opt/android-web/scripts/live-session-test.js
 # attempts to leave the Clock app in a restricted session (15 checks)
 sudo /opt/node/bin/node /opt/android-web/scripts/live-restriction-test.js
+# what a hostile app on a device could reach: debugging port, server, metadata address, app install
+sudo /opt/node/bin/node /opt/android-web/scripts/live-security-test.js
 ```
+
+## Security fences
+
+A security review of the finished system found a path from an anonymous visitor towards the server: install an app on a full device, connect from it to the device's own debugging port (no authentication), and work from that shell inside a privileged container. Running the test below against the old version confirmed each step was open: the port answered from inside the device, an app install succeeded, and the device could reach the AWS metadata address and the server's SSH port. These fences were added:
+
+| Fence | Where |
+|---|---|
+| The device's debugging port accepts connections from the server only, not from the device itself | `backend/src/hardening.js` |
+| Visitors cannot install apps on a device | `backend/src/hardening.js` |
+| Devices cannot reach the server, the private network, the cloud metadata address or the internet | `infra/device-firewall.sh` |
+| One network address can hold at most 2 of the 3 devices (`MAX_SESSIONS_PER_ADDRESS`) | `backend/src/sessionManager.js` |
+| Each device is limited to 1.5 CPUs (`DEVICE_CPUS`) | `backend/src/deviceManager.js` |
+| The page loads scripts and styles from this site only (content security policy) | `backend/src/access.js` |
+
+**Status:** all of these were tested on the live server on 4 Oct. `scripts/live-security-test.js` passes 12 of 12 checks (against the version before the fences, 10 of its 13 checks failed), the per-address limit refused a third session through the public address, and the fences were still in place after a reboot. One thing found on the way: the debugging shell runs as Android's `shell` user, not as root, so the original path was less direct than the review assumed.
 
 ## Measured
 
-- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps. Method, conditions and all samples are in [LATENCY.md](LATENCY.md).
-- **Device start:** about 6.5 s for a new device; about 7 s from "Start a new session" to live video.
+- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps. Method, conditions and all samples are in [docs/LATENCY.md](docs/LATENCY.md).
+- **Device start:** 8.5 s from request to ready with the CPU limit and fences in place (one measurement); before them it was 6.5 s for a new device and about 7 s from "Start a new session" to live video.
 - **Memory:** about 600 MB per device.
 - **Reboot:** the site answered again 25 s after a server reboot, with no one logging in.
 
-Raw numbers and the commands behind them are in [NOTES.md](NOTES.md).
+Raw numbers and the commands behind them are in [docs/notes/NOTES.md](docs/notes/NOTES.md).
 
 ## Browsers
 
@@ -157,10 +188,15 @@ The page needs WebCodecs, which browsers only provide on HTTPS (or localhost).
 |---|---|
 | `backend/` | Node.js server: sessions, device containers, scrcpy relay, input checks, tests |
 | `frontend/` | The page: video decoding, input, clipboard, latency test (plain JavaScript, no build step) |
-| `infra/` | `setup.sh` and the systemd service |
-| `scripts/` | Server feasibility check, scrcpy-server download, live session test |
+| `infra/` | `setup.sh`, the device firewall and the systemd services |
+| `scripts/` | Server feasibility check, scrcpy-server download, live tests |
 | `spikes/` | Throwaway experiments from before the build; the app does not use them |
-| `RESEARCH.md`, `NOTES.md`, `LATENCY.md` | Research, raw measurements, latency report |
+| `docs/DEMO_SCRIPT.md` | Script for the demo video |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the screen, input, isolation and restriction work; alternatives rejected |
+| [`docs/WRITEUP.md`](docs/WRITEUP.md) | What went wrong, what I would do with more time, my decisions and where the AI was wrong |
+| [`docs/LATENCY.md`](docs/LATENCY.md) | Latency method and results |
+| `docs/notes/` | `RESEARCH.md` (research before the build) and `NOTES.md` (raw measurements, commands, gotchas) |
+| `docs/brief/` | The assignment text, the requirements checklist, and the planning guide and prompt used to start the work |
 | `PROCESS_LOG.md` | Running record of every prompt given to the AI coding agent and what it did |
 
 ## AI use
@@ -173,8 +209,9 @@ Assignment received Sat 3 Oct 2026, 13:00 IST. Times below come from the process
 
 | When (IST) | Work |
 |---|---|
-| Sat 3 Oct, evening | Reading the assignment, glossary and checklist (hours to be filled in by the author) |
+| Sat 3 Oct | Reading the assignment, planning conversation, glossary and checklist: 8 hours |
 | Sun 4 Oct, 00:10 to 03:20 | Research, cloud account, server check, three experiments |
-| Sun 4 Oct, 12:10 to about 15:00 | Live video, input, deployment, one device per session, latency, clipboard |
+| Sun 4 Oct, 12:10 to about 17:00 | Live video, input, deployment, one device per session, latency, clipboard, Clock-only mode, reviews |
+| Sun 4 Oct, 17:20 to about 18:00 | Security fences, session recording, write-up |
 
 Total so far: to be filled in by the author before submission.

@@ -35,4 +35,41 @@ function isOriginAllowed(origin, host) {
   }
 }
 
-module.exports = { isAccessCodeValid, isOriginAllowed };
+/**
+ * The visitor's network address, for the per-address session limit. The backend only
+ * listens on this machine; visitors arrive through the web server, which writes their
+ * address at the end of X-Forwarded-For. A request without that header was made on the
+ * server itself (tests, administration) and has no visitor address.
+ * @param {unknown} forwardedFor the X-Forwarded-For request header
+ * @returns {string | null}
+ */
+function visitorAddress(forwardedFor) {
+  if (typeof forwardedFor !== 'string') return null;
+  const last = forwardedFor.split(',').pop().trim();
+  return last === '' ? null : last;
+}
+
+const HOST_PATTERN = /^[a-z0-9.-]+(:\d{1,5})?$/i;
+
+/**
+ * Response headers for the page and its scripts. The policy allows scripts, styles and
+ * connections from this site only: no inline script, no other origin.
+ * @param {string | undefined} host the Host request header
+ * @returns {Record<string, string>}
+ */
+function securityHeaders(host) {
+  // Not every browser lets 'self' cover the WebSocket address, so it is named as well.
+  const socket = typeof host === 'string' && HOST_PATTERN.test(host) ? ` wss://${host} ws://${host}` : '';
+  const policy = [
+    "default-src 'none'", "script-src 'self'", "style-src 'self'", "img-src 'self'", "media-src 'self'",
+    `connect-src 'self'${socket}`, "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+  ].join('; ');
+  return {
+    'content-security-policy': policy,
+    'x-frame-options': 'DENY',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+  };
+}
+
+module.exports = { isAccessCodeValid, isOriginAllowed, visitorAddress, securityHeaders };

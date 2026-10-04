@@ -12,12 +12,18 @@ const WS_CLOSE_BAD_CODE = 4401;
 const WS_CLOSE_TRY_AGAIN = 1013;
 const WS_CLOSE_SESSION_ENDED = 4410;
 const WS_CLOSE_BUSY = 4429;
+const WS_CLOSE_ADDRESS_LIMIT = 4430;
 const BUSY_RETRY_MS = 5000;
 const ACCESS_CODE_KEY = 'accessCode';
 // Identifies this tab's device session, so a short network drop resumes the same device.
 const SESSION_TOKEN_KEY = 'sessionToken';
 // 'full' is the whole device; 'restricted' is one app only, enforced by the server.
 const SESSION_MODE_KEY = 'sessionMode';
+// Tokens of this browser's recent sessions. After a session has ended its token opens
+// nothing but that session's recording.
+const RECORDINGS_KEY = 'recordings';
+const MAX_LISTED_RECORDINGS = 10;
+const RECORDING_KEEP_MS = 24 * 60 * 60 * 1000;
 const MAX_TRACKED_FRAMES = 120;
 const LATENCY_TRIALS = 40;
 const ROUND_TRIP_PINGS = 10;
@@ -37,6 +43,9 @@ const clipboardNote = document.getElementById('clipboard-note');
 const deviceClipboard = document.getElementById('device-clipboard');
 const latencyResult = document.getElementById('latency-result');
 const switchModeButton = document.getElementById('switch-mode');
+const recordingVideo = document.getElementById('recording');
+const recordingDownload = document.getElementById('recording-download');
+const recordingList = document.getElementById('recording-list');
 
 let socket = null;
 let decoder = null;
@@ -167,14 +176,82 @@ function switchMode() {
   sendMessage({ t: 'end' });
 }
 
+function recordingUrl(token, isDownload) {
+  const query = new URLSearchParams({ session: token });
+  if (isDownload) query.set('download', '1');
+  return `/recording?${query}`;
+}
+
+// localStorage can be unavailable or hold anything; a bad value is treated as empty.
+function loadRecordings() {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECORDINGS_KEY) || '[]');
+    return list.filter((entry) => /^[0-9a-f]{32}$/.test(entry.token) && Date.now() - entry.startedAt < RECORDING_KEEP_MS);
+  } catch {
+    return [];
+  }
+}
+
+function rememberRecording(token, mode) {
+  const list = loadRecordings();
+  if (list.some((entry) => entry.token === token)) return;
+  const updated = [{ token, mode, startedAt: Date.now() }, ...list].slice(0, MAX_LISTED_RECORDINGS);
+  try {
+    localStorage.setItem(RECORDINGS_KEY, JSON.stringify(updated));
+  } catch {
+    // Storage is blocked: the recording still exists, it is only not listed here.
+  }
+}
+
+function link(text, href, opensNewTab) {
+  const anchor = document.createElement('a');
+  anchor.textContent = text;
+  anchor.href = href;
+  if (opensNewTab) {
+    anchor.target = '_blank';
+    anchor.rel = 'noopener';
+  }
+  return anchor;
+}
+
+function renderRecordings() {
+  const items = loadRecordings().map((entry) => {
+    const item = document.createElement('li');
+    const kind = entry.mode === 'restricted' ? 'Clock only' : 'full device';
+    item.append(`${new Date(entry.startedAt).toLocaleString()}, ${kind}`, link('Watch', recordingUrl(entry.token, false), true), link('Download', recordingUrl(entry.token, true), false));
+    return item;
+  });
+  if (items.length === 0) items.push(Object.assign(document.createElement('li'), { textContent: 'No recordings yet.' }));
+  recordingList.replaceChildren(...items);
+}
+
+function showRecording(token) {
+  recordingVideo.src = recordingUrl(token, false);
+  recordingVideo.hidden = false;
+  recordingDownload.href = recordingUrl(token, true);
+  recordingDownload.hidden = false;
+}
+
+function hideRecording() {
+  recordingVideo.removeAttribute('src');
+  recordingVideo.load();
+  recordingVideo.hidden = true;
+  recordingDownload.hidden = true;
+}
+
 function handleDeviceState(message) {
-  if (message.token) sessionStorage.setItem(SESSION_TOKEN_KEY, message.token);
+  if (message.token) {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, message.token);
+    rememberRecording(message.token, message.mode || 'full');
+    renderRecordings();
+  }
   if (message.mode) showMode(message.mode);
   if (message.state === 'starting') setStatus('connecting', 'Starting your Android device (about 10 seconds)');
   if (message.state === 'ready') setStatus('connecting', 'Device ready, waiting for video');
 }
 
 function showSessionEnded(reason) {
+  const endedToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
   if (isSwitchingMode) {
     isSwitchingMode = false;
@@ -185,6 +262,7 @@ function showSessionEnded(reason) {
   endedReason.textContent = `Session ended: ${reason || 'no reason given'}. The device and everything on it were removed.`;
   endedPanel.hidden = false;
   deviceButtons.hidden = true;
+  if (endedToken) showRecording(endedToken);
 }
 
 // Browsers only allow clipboard access on HTTPS and usually only right after a click or
@@ -301,6 +379,10 @@ function handleClose(event) {
     setStatus('reconnecting', 'All devices are in use. This page tries again every few seconds.');
     return setTimeout(connect, BUSY_RETRY_MS);
   }
+  if (event.code === WS_CLOSE_ADDRESS_LIMIT) {
+    setStatus('reconnecting', 'Your network address already has the most devices allowed at once. End one of them; this page tries again every few seconds.');
+    return setTimeout(connect, BUSY_RETRY_MS);
+  }
   const reason = event.code === WS_CLOSE_TRY_AGAIN && event.reason ? event.reason : 'connection lost';
   if (statusEl.dataset.state !== 'reconnecting') setStatus('reconnecting', `Reconnecting (${reason})`);
   setTimeout(connect, reconnectDelayMs);
@@ -344,7 +426,9 @@ function start() {
   document.getElementById('paste').addEventListener('click', pasteIntoDevice);
   document.getElementById('copy-device').addEventListener('click', copyDeviceClipboard);
   document.getElementById('latency-run').addEventListener('click', runLatencyTest);
+  renderRecordings();
   document.getElementById('new-session').addEventListener('click', () => {
+    hideRecording();
     endedPanel.hidden = true;
     deviceButtons.hidden = false;
     setStatus('connecting', 'Connecting');

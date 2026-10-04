@@ -1,8 +1,9 @@
 [Unit]
 Description=Android in the browser: backend (video relay and input)
-After=network-online.target docker.service
+After=network-online.target docker.service android-web-firewall.service
 Wants=network-online.target
-Requires=docker.service
+# No devices without the firewall that fences them in.
+Requires=docker.service android-web-firewall.service
 # Keep retrying for as long as it takes; the default gives up after 5 quick failures.
 StartLimitIntervalSec=0
 
@@ -11,6 +12,10 @@ User=androidweb
 WorkingDirectory=/opt/android-web/backend
 EnvironmentFile=/etc/android-web.env
 Environment=HOME=/home/androidweb
+# systemd creates /var/lib/android-web, owned by the service user.
+StateDirectory=android-web
+StateDirectoryMode=0700
+Environment=RECORDINGS_DIR=/var/lib/android-web/recordings
 ExecStart=/opt/node/bin/node src/server.js
 # The backend exits if the Android device is not ready yet (for example right after a
 # reboot, while the container is still starting). systemd then tries again.

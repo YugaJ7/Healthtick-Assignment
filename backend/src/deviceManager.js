@@ -5,6 +5,7 @@ const { adb, adbConnect, adbDisconnect } = require('./adb');
 const { config } = require('./config');
 const { logger } = require('./logger');
 const { applyRestriction } = require('./restriction');
+const { hardenDevice } = require('./hardening');
 
 // Every Android device is its own redroid container: its own file system, settings and
 // apps. Containers are created for one session and removed with it, so nothing carries
@@ -15,6 +16,7 @@ const BOOT_POLL_MS = 500;
 const NAME_PREFIX = 'android-web-';
 const SESSION_LABEL = 'android-web=session';
 const ADB_PORT_IN_CONTAINER = '5555/tcp';
+const BRIDGE_NAME_OPTION = 'com.docker.network.bridge.name';
 
 function docker(args) {
   return new Promise((resolve, reject) => {
@@ -29,10 +31,19 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Containers on this network cannot talk to each other (inter-container traffic is off),
 // so one user's device cannot reach another's. They can still reach the internet.
+// The bridge has a fixed name so that the host firewall (infra/device-firewall.sh) can
+// keep devices away from the server itself, the private network and the cloud's
+// metadata address.
 async function ensureNetwork() {
-  const existing = await docker(['network', 'ls', '--filter', `name=^${config.device.network}$`, '--format', '{{.Name}}']);
-  if (existing === config.device.network) return;
-  await docker(['network', 'create', '-o', 'com.docker.network.bridge.enable_icc=false', config.device.network]);
+  const { network, bridge } = config.device;
+  const existing = await docker(['network', 'ls', '--filter', `name=^${network}$`, '--format', '{{.Name}}']);
+  if (existing === network) {
+    const currentBridge = await docker(['network', 'inspect', '-f', `{{index .Options "${BRIDGE_NAME_OPTION}"}}`, network]);
+    if (currentBridge === bridge) return;
+    // Made by an earlier version, with a bridge name Docker picked: the firewall would miss it.
+    await docker(['network', 'rm', network]);
+  }
+  await docker(['network', 'create', '-o', 'com.docker.network.bridge.enable_icc=false', '-o', `${BRIDGE_NAME_OPTION}=${bridge}`, network]);
 }
 
 // Removes device containers left behind by an earlier run of the backend (a crash or kill).
@@ -65,11 +76,11 @@ async function waitForBoot(serial, deadline) {
  */
 async function createDevice(id, mode) {
   const name = `${NAME_PREFIX}${id}`;
-  const { image, network, memory, width, height, fps, bootTimeoutMs } = config.device;
+  const { image, network, memory, cpus, width, height, fps, bootTimeoutMs } = config.device;
   try {
     await docker([
       'run', '-d', '--privileged', '--name', name, '--label', SESSION_LABEL,
-      '--network', network, '--memory', memory,
+      '--network', network, '--memory', memory, '--cpus', cpus,
       // ADB is reachable from this host only, on a port Docker picks.
       '-p', '127.0.0.1::5555', image,
       'androidboot.redroid_gpu_mode=guest',
@@ -80,6 +91,7 @@ async function createDevice(id, mode) {
     if (!Number.isInteger(port) || port <= 0) throw new Error(`unexpected port mapping "${mapping}"`);
     const serial = `127.0.0.1:${port}`;
     await waitForBoot(serial, Date.now() + bootTimeoutMs);
+    await hardenDevice((args) => docker(['exec', name, ...args]));
     await adb(serial, ['push', config.scrcpy.localJar, config.scrcpy.deviceJar]);
     if (mode === 'restricted') await applyRestriction(serial);
     return { name, serial };

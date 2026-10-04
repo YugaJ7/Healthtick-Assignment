@@ -4,42 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Android in the browser</title>
-  <style>
-    html, body { height: 100%; margin: 0; }
-    body { display: flex; flex-direction: column; background: #16181d; color: #e8eaed; font-family: system-ui, sans-serif; }
-    header { display: flex; gap: 16px; align-items: center; padding: 8px 16px; font-size: 14px; }
-    #status::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: #9aa0a6; }
-    #status[data-state="live"]::before { background: #34a853; }
-    #status[data-state="reconnecting"]::before { background: #fbbc04; }
-    #status[data-state="error"]::before { background: #ea4335; }
-    #stats { margin-left: auto; color: #9aa0a6; font-variant-numeric: tabular-nums; }
-    main { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px; }
-    /* The canvas keeps the device's own pixel size; CSS only scales it to fit the window. */
-    canvas { max-width: 100%; max-height: 100%; background: #000; touch-action: none; user-select: none; outline: none; }
-    canvas:focus-visible { box-shadow: 0 0 0 2px #8ab4f8; }
-    nav { display: flex; gap: 12px; justify-content: center; padding: 12px 16px; }
-    form { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 8px 16px 16px; }
-    form[hidden], nav[hidden], section[hidden] { display: none; }
-    nav { flex-wrap: wrap; }
-    section { display: flex; flex-direction: column; gap: 12px; align-items: center; padding: 8px 16px 16px; text-align: center; }
-    section p { margin: 0; }
-    #status[data-state="ended"]::before { background: #9aa0a6; }
-    /* A Clock-only session has no Home or Recents; the server ignores them anyway. */
-    body[data-mode="restricted"] button[data-key="Home"], body[data-mode="restricted"] button[data-key="AppSwitch"] { display: none; }
-    #tools { padding: 0 16px 12px; font-size: 14px; text-align: center; }
-    .tool { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
-    #tools p { margin: 8px 0 0; min-height: 1.2em; color: #9aa0a6; }
-    textarea { width: 220px; max-width: 100%; min-height: 40px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; resize: vertical; }
-    textarea:focus-visible, summary:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
-    details { margin-top: 8px; color: #9aa0a6; }
-    summary { cursor: pointer; }
-    pre { max-height: 160px; overflow: auto; text-align: left; white-space: pre-wrap; }
-    input { min-height: 40px; padding: 0 12px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; }
-    input:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
-    button { min-width: 88px; min-height: 40px; padding: 8px 16px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; cursor: pointer; }
-    button:hover { background: #2f333b; }
-    button:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
-  </style>
+  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header>
@@ -70,6 +35,11 @@
     </div>
     <p id="clipboard-note" role="status"></p>
     <details>
+      <summary>Recordings of your sessions</summary>
+      <p>Every session is recorded on the server. Only this browser can open its recordings; they are deleted after 24 hours.</p>
+      <ul id="recording-list"></ul>
+    </details>
+    <details>
       <summary>Latency test</summary>
       <button type="button" id="latency-run">Run 40 taps</button>
       <pre id="latency-result" role="status"></pre>
@@ -77,6 +47,8 @@
   </div>
   <section id="ended" hidden>
     <p id="ended-reason"></p>
+    <video id="recording" controls hidden></video>
+    <a id="recording-download" hidden>Download the recording of this session</a>
     <button type="button" id="new-session">Start a new session</button>
   </section>
   <script type="module" src="/app.mjs"></script>

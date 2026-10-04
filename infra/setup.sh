@@ -31,9 +31,13 @@ apt-get install -y -qq docker.io adb curl xz-utils openssl "linux-modules-extra-
 apt-get install -y -qq linux-modules-extra-aws || echo "WARN: linux-modules-extra-aws not installed; binder may be missing after a kernel upgrade"
 
 step "Binder kernel module, now and at every boot"
-echo "binder_linux" > /etc/modules-load.d/android-web.conf
+# iptable_filter and ip6table_filter: the firewall rule the backend sets inside each device
+# uses Android's own iptables, which needs these (Ubuntu's Docker does not load them).
+printf 'binder_linux\niptable_filter\nip6table_filter\n' > /etc/modules-load.d/android-web.conf
 echo 'options binder_linux devices=binder,hwbinder,vndbinder' > /etc/modprobe.d/android-web.conf
 modprobe binder_linux
+modprobe iptable_filter
+modprobe ip6table_filter
 grep -q binder /proc/filesystems || { echo "binder is not available on this kernel"; exit 1; }
 
 step "Node.js ${NODE_MAJOR} (official build, checksum verified)"
@@ -61,7 +65,7 @@ id "$APP_USER" >/dev/null 2>&1 || useradd --system --create-home --shell /usr/sb
 # Note: membership of the docker group is equivalent to root on this server.
 usermod -aG docker "$APP_USER"
 mkdir -p "$APP_DIR"
-cp -r "$REPO_DIR/backend" "$REPO_DIR/frontend" "$REPO_DIR/scripts" "$APP_DIR/"
+cp -r "$REPO_DIR/backend" "$REPO_DIR/frontend" "$REPO_DIR/scripts" "$REPO_DIR/infra" "$APP_DIR/"
 find "$APP_DIR" -name '*.sh' -exec sed -i 's/\r$//' {} +
 bash "$APP_DIR/scripts/fetch-scrcpy-server.sh"
 (cd "$APP_DIR/backend" && PATH="/opt/node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund)
@@ -75,10 +79,11 @@ if [ ! -f "$ENV_FILE" ]; then
   chmod 600 "$ENV_FILE"
 fi
 
-step "Backend service (starts at boot, restarts on failure)"
-cp "$REPO_DIR/infra/android-web.service" /etc/systemd/system/android-web.service
+step "Firewall for the device network, then the backend service (both start at boot)"
+cp "$REPO_DIR/infra/android-web.service" "$REPO_DIR/infra/android-web-firewall.service" /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable android-web
+systemctl enable android-web-firewall android-web
+systemctl restart android-web-firewall
 systemctl restart android-web
 
 if [ -n "$SITE_HOST" ]; then

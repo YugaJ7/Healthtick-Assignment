@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createSessionManager, BusyError } = require('../src/sessionManager');
+const { createSessionManager, BusyError, LimitError } = require('../src/sessionManager');
 
 const GRACE_MS = 30_000;
 const IDLE_MS = 300_000;
@@ -75,6 +75,53 @@ test('refuses a new session when all devices are in use', (t) => {
   assert.equal(manager.count(), 3);
 });
 
+test('one address cannot hold more than its share of the devices', (t) => {
+  const { manager } = setup(t, { maxPerOwner: 2 });
+  manager.attach(null, () => {}, 'full', '203.0.113.7');
+  manager.attach(null, () => {}, 'full', '203.0.113.7');
+
+  assert.throws(() => manager.attach(null, () => {}, 'full', '203.0.113.7'), LimitError);
+  assert.equal(manager.count(), 2);
+  assert.doesNotThrow(() => manager.attach(null, () => {}, 'full', '198.51.100.9'));
+});
+
+test('an address gets its place back when one of its sessions ends', (t) => {
+  const { manager } = setup(t, { maxPerOwner: 1 });
+  const first = manager.attach(null, () => {}, 'full', '203.0.113.7');
+
+  manager.end(first, 'ended by user');
+
+  assert.doesNotThrow(() => manager.attach(null, () => {}, 'full', '203.0.113.7'));
+});
+
+test('resuming a session with its token is not counted as a new one', (t) => {
+  const { manager } = setup(t, { maxPerOwner: 1 });
+  const first = manager.attach(null, () => {}, 'full', '203.0.113.7');
+
+  const again = manager.attach(first.token, () => {}, 'full', '203.0.113.7');
+
+  assert.equal(again, first);
+});
+
+test('sessions without an owner are not limited per address', (t) => {
+  const { manager } = setup(t, { maxPerOwner: 1 });
+
+  manager.attach(null, () => {});
+
+  assert.doesNotThrow(() => manager.attach(null, () => {}));
+});
+
+test('tells the owner of the manager once when a session has ended', (t) => {
+  const ended = [];
+  const { manager } = setup(t, { onEnded: (session) => ended.push(session.id) });
+  const session = manager.attach(null, () => {});
+
+  manager.end(session, 'ended by user');
+  manager.end(session, 'ended by user');
+
+  assert.deepEqual(ended, [session.id]);
+});
+
 test('removes the device when the viewer stays away longer than the grace time', async (t) => {
   const { manager, removed } = setup(t);
   const onEnd = () => {};
@@ -144,7 +191,7 @@ test('a device that fails to start ends the session and frees the slot', async (
   manager.attach(null, (reason) => reasons.push(reason));
   await settle();
 
-  assert.deepEqual(reasons, ['device failed: boot failed']);
+  assert.deepEqual(reasons, ['the device could not be started']);
   assert.equal(manager.count(), 0);
   assert.equal(removed.length, 0);
 });

@@ -213,3 +213,24 @@ Findings on a throwaway device:
 Results: `scripts/live-restriction-test.js` 15 of 15 pass; restricted session ready in about 5 s; switching mode from the page gives a new device in about 5.6 s; `scripts/live-session-test.js` still 16 of 16.
 
 Left in the log at session end: `adb ... forward --remove ... device not found` (the forward is removed after the device is already gone). Harmless, not fixed.
+
+## Security fences and recording, Sun 4 Oct ~17:30 to 17:50 IST
+
+Baseline (old version), from inside a device with `nc`: port 5555 open on 127.0.0.1, own address and ::1; 169.254.169.254:80 open; server SSH (bridge address and private address) open; `pm install` of a copied system APK: Success. `adb shell id` is uid 2000 (shell), not root; `docker exec` is root.
+
+| What | Result |
+|---|---|
+| `live-security-test.js` on the old version | 10 of 13 checks fail |
+| `live-security-test.js` after the fences | 12 of 12 pass, also after a reboot |
+| `live-session-test.js`, `live-restriction-test.js` after the fences | 16 of 16, 15 of 15 |
+| Device ready, first / second while the first runs | 8.5 s / 11.6 s (1.5 CPU limit, fences) |
+| Third session from one address, public link | closed, code 4430 |
+| Recording of a 5 s session with two swipes | 760 KB, plays in Chrome, 720 x 1280 |
+| Recordings of the live tests | 0.8 to 1.5 MB each |
+
+Gotchas:
+- `pm set-user-restriction` over adb fails (needs MANAGE_USERS); as root via `docker exec <name> /system/bin/pm ...` it works.
+- Android's `iptables -w -I INPUT -p tcp --dport 5555 ! -i eth0 -j DROP` works inside the redroid container (same for ip6tables). Host modules `iptable_filter` and `ip6table_filter` are loaded by setup.sh.
+- Host rules live in chains ANDROID-WEB-FWD (hooked into DOCKER-USER) and ANDROID-WEB-IN (hooked into INPUT), matched on the bridge name `awnet0`.
+- The server's resolver is 172.31.0.2 (a private address), so with `DEVICE_INTERNET=on` DNS has to be allowed before the private ranges are dropped. That mode has not been run.
+- `curl -s` without `-f` treats an error page as success; the reboot timing probe was fooled by it.
