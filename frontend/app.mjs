@@ -1,4 +1,5 @@
 import { codecStringFromConfig, concatBytes } from './h264.mjs';
+import { attachInput } from './input.mjs';
 
 const PACKET_HEADER_BYTES = 9;
 const FLAG_CONFIG = 0x01;
@@ -19,6 +20,7 @@ let isWaitingForKeyFrame = true;
 let latestFrame = null; // only the newest decoded frame is kept; older ones are dropped
 let reconnectDelayMs = RECONNECT_MIN_MS;
 let framesDrawn = 0;
+const input = attachInput(canvas, (message) => sendMessage(message));
 
 function setStatus(state, text) {
   statusEl.dataset.state = state;
@@ -101,8 +103,13 @@ function restart(reason) {
   if (socket) socket.close();
 }
 
+function sendMessage(message) {
+  if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+}
+
 function scheduleReconnect() {
   closeDecoder();
+  input.reset();
   if (statusEl.dataset.state !== 'reconnecting') setStatus('reconnecting', 'Connection lost, reconnecting');
   setTimeout(connect, reconnectDelayMs);
   reconnectDelayMs = Math.min(reconnectDelayMs * 2, RECONNECT_MAX_MS);
@@ -131,6 +138,12 @@ function start() {
     framesDrawn = 0;
   }, STATS_INTERVAL_MS);
   requestAnimationFrame(drawLatestFrame);
+  for (const button of document.querySelectorAll('button[data-key]')) {
+    button.addEventListener('click', () => {
+      input.sendKeyPress(button.dataset.key);
+      canvas.focus();
+    });
+  }
   connect();
 }
 

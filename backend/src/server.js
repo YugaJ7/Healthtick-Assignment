@@ -8,6 +8,7 @@ const { config } = require('./config');
 const { logger } = require('./logger');
 const { adb, connectDevice } = require('./adb');
 const { startScrcpySession, pushScrcpyServer } = require('./scrcpySession');
+const { encodeClientMessage, InputError } = require('./controlMessages');
 
 const STREAM_PATH = '/stream';
 const PACKET_HEADER_BYTES = 9;
@@ -17,6 +18,11 @@ const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
 const WS_CLOSE_TRY_AGAIN = 1013;
 const WS_CLOSE_INTERNAL = 1011;
 const WS_CLOSE_GOING_AWAY = 1001;
+const WS_CLOSE_POLICY = 1008;
+const MAX_INPUT_MESSAGE_BYTES = 2048;
+const INPUT_WINDOW_MS = 1000;
+const MAX_INPUTS_PER_WINDOW = 1000;
+const MAX_REJECTED_INPUTS = 50;
 const SHUTDOWN_GRACE_MS = 2000;
 
 // Only these files are served; anything else is a 404, so no path from the URL reaches the disk.
@@ -24,6 +30,8 @@ const STATIC_FILES = new Map([
   ['/', { file: 'index.html', type: 'text/html; charset=utf-8' }],
   ['/app.mjs', { file: 'app.mjs', type: 'text/javascript; charset=utf-8' }],
   ['/h264.mjs', { file: 'h264.mjs', type: 'text/javascript; charset=utf-8' }],
+  ['/input.mjs', { file: 'input.mjs', type: 'text/javascript; charset=utf-8' }],
+  ['/pointerMap.mjs', { file: 'pointerMap.mjs', type: 'text/javascript; charset=utf-8' }],
 ]);
 
 function handleHttp(req, res) {
@@ -57,6 +65,14 @@ function encodePacket(packet) {
   return Buffer.concat([header, packet.data]);
 }
 
+function parseJson(data) {
+  try {
+    return JSON.parse(data.toString('utf8'));
+  } catch {
+    throw new InputError('message is not valid JSON');
+  }
+}
+
 function handleViewer(ws) {
   if (wss.clients.size > config.maxViewers) {
     return ws.close(WS_CLOSE_TRY_AGAIN, 'too many viewers');
@@ -64,7 +80,34 @@ function handleViewer(ws) {
   const session = startScrcpySession();
   logger.info(`viewer connected, scrcpy ${session.scid}`);
 
+  let videoSize = null;
+  let inputWindowStart = Date.now();
+  let inputCount = 0;
+  let rejectedCount = 0;
+
+  // Input from the browser. Every message is checked and re-encoded by encodeClientMessage,
+  // so nothing the browser sends reaches the device as raw bytes.
+  ws.on('message', (data, isBinary) => {
+    const now = Date.now();
+    if (now - inputWindowStart >= INPUT_WINDOW_MS) {
+      inputWindowStart = now;
+      inputCount = 0;
+    }
+    inputCount += 1;
+    if (inputCount > MAX_INPUTS_PER_WINDOW) return; // flood: drop until the next window
+    try {
+      if (isBinary) throw new InputError('binary input is not accepted');
+      session.sendControl(encodeClientMessage(parseJson(data), videoSize));
+    } catch (err) {
+      if (!(err instanceof InputError)) throw err;
+      rejectedCount += 1;
+      logger.info(`scrcpy ${session.scid} rejected input: ${err.message}`);
+      if (rejectedCount > MAX_REJECTED_INPUTS) ws.close(WS_CLOSE_POLICY, 'too many invalid messages');
+    }
+  });
+
   session.on('event', (event) => {
+    if (event.type === 'session') videoSize = { width: event.width, height: event.height };
     if (ws.readyState !== ws.OPEN) return;
     if (event.type !== 'packet') return ws.send(JSON.stringify(event));
     // A viewer that cannot keep up would otherwise fall further and further behind.
@@ -81,7 +124,7 @@ function handleViewer(ws) {
 }
 
 const server = http.createServer(handleHttp);
-const wss = new WebSocketServer({ server, path: STREAM_PATH });
+const wss = new WebSocketServer({ server, path: STREAM_PATH, maxPayload: MAX_INPUT_MESSAGE_BYTES });
 wss.on('connection', handleViewer);
 
 async function main() {

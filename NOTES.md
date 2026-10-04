@@ -99,3 +99,34 @@ The user moved to a second AWS account. New server: m7i.large (2 vCPU, 7.6 GiB; 
 - A backend killed with SIGKILL leaves `adb forward` entries behind. Fixed by `adb forward --remove-all` at startup. After SIGTERM one forward can still remain (the process exits before the removal finishes); the startup cleanup covers it.
 - `adb devices` on the server lists the container twice (`127.0.0.1:5555` and `emulator-5554`). Harmless so far; the backend always passes `-s 127.0.0.1:5555`.
 - Manual steps so far that the setup script must do: install docker.io, adb, linux-modules-extra; modprobe binder_linux; run the redroid container; install Node; copy the app; `npm install --omit=dev`; fetch scrcpy-server; start the backend. None of this survives a reboot yet.
+
+## M2 input results, Sun 4 Oct ~13:00 IST
+
+Server restarted as m7i-flex.large, IP 65.0.108.161 (Mumbai). `/dev/kvm` still present after the type change. Warm start of the existing redroid container: 7 s to `boot_completed`.
+
+Landing test method: events were sent through the page's own handlers (scripted pointer events on the canvas, Chrome on the laptop, devicePixelRatio 1.25), and the device side was read with `adb shell dumpsys input` (section `RecentQueue`, which lists the coordinates Android received).
+
+| Layout of the screen image in the page | Targets (device pixels) | Landed |
+|---|---|---|
+| 310 x 551 CSS px (default, window 1038 x 650) | (0,0) (719,0) (0,1279) (719,1279) (360,640) | all exact |
+| 135 x 240 CSS px | same five | all exact |
+| 150 x 267 CSS px, fractional left offset 37.3 | same five | all exact |
+| Landscape after rotation, video 1280 x 720 shown at 980 x 551 | (0,0) (1279,719) (640,360) | all exact |
+
+Other checks:
+
+| What | Result |
+|---|---|
+| Typing `Hello World 123 !@#` then `x` and Backspace into the search box | Field showed `Hello World 123 !@#` (screenshot `spikes/out/m2-typing.png`) |
+| Swipe up from (360,1000) to (360,300) | App drawer opened; MOVE events at the sent coordinates (`spikes/out/m2-swipe.png`) |
+| Mouse wheel | Three SCROLL events arrived, source mouse, at (359,639) for a request at (360,640): one pixel off, cause not investigated |
+| Home button on the page | Returned to the launcher |
+| Rotation | Page followed the new video size without a reload (`spikes/out/m2-landscape.png`) |
+| Rejected input messages in the backend log | 0 |
+
+### Gotchas found
+
+- `settings put system pointer_location 1` shows an overlay but does not write coordinates to logcat on this image; `dumpsys input` RecentQueue does (last 10 events only).
+- A tap on the exact bottom-left corner also produces a BACK key event from the navigation bar. That is the device's behaviour, not a mapping error.
+- `user_rotation 1` has no effect while the launcher is in front (it is portrait only); it works with Settings in front.
+- After a stop/start of the instance: `modprobe binder_linux ...`, `docker start spike-redroid`, start the backend. Still manual.

@@ -12,6 +12,7 @@ const SCID_LIMIT = 2 ** 31;
 const CONNECT_ATTEMPTS = 50;
 const CONNECT_RETRY_MS = 100;
 const DUMMY_BYTE_COUNT = 1;
+const MAX_CONTROL_BACKLOG_BYTES = 64 * 1024;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -24,7 +25,7 @@ function serverCommand(scid) {
   return [
     `CLASSPATH=${deviceJar}`, 'app_process', '/', 'com.genymobile.scrcpy.Server', version,
     `scid=${scid}`, 'log_level=info', 'tunnel_forward=true',
-    'audio=false', 'control=false', 'cleanup=false', 'send_device_meta=false',
+    'audio=false', 'control=true', 'cleanup=false', 'send_device_meta=false',
     'video_codec=h264', `max_size=${maxSize}`, `max_fps=${maxFps}`, `video_bit_rate=${bitRate}`,
   ].join(' ');
 }
@@ -64,7 +65,21 @@ async function openVideoSocketWithRetry(port, isStopped) {
   throw new Error(`could not reach scrcpy-server on the device: ${lastError ? lastError.message : 'stopped'}`);
 }
 
-// One scrcpy-server instance and its video socket. Emits:
+// scrcpy-server accepts its sockets in a fixed order: video first, then control.
+// Only the first socket gets the dummy byte, so this one is ready as soon as it connects.
+function openControlSocket(port) {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    socket.once('error', reject);
+    socket.once('connect', () => {
+      socket.removeListener('error', reject);
+      socket.setNoDelay(true);
+      resolve(socket);
+    });
+  });
+}
+
+// One scrcpy-server instance with its video and control sockets. Emits:
 //   'event' (codec | session | packet objects from the parser)
 //   'close' (reason string), exactly once
 function startScrcpySession() {
@@ -74,11 +89,13 @@ function startScrcpySession() {
   let port = null;
   let serverProcess = null;
   let socket = null;
+  let controlSocket = null;
 
   function stop(reason) {
     if (isStopped) return;
     isStopped = true;
     if (socket) socket.destroy();
+    if (controlSocket) controlSocket.destroy();
     if (serverProcess) serverProcess.kill();
     if (port !== null) {
       adb(['forward', '--remove', `tcp:${port}`]).catch((err) => logger.error(`[scrcpy ${scid}] ${err.message}`));
@@ -101,6 +118,14 @@ function startScrcpySession() {
     socket = await openVideoSocketWithRetry(port, () => isStopped);
     if (isStopped) return socket.destroy();
 
+    controlSocket = await openControlSocket(port);
+    if (isStopped) return controlSocket.destroy();
+    // The device also talks on this socket (clipboard, acknowledgements). Nothing uses
+    // that yet, so it is read and dropped to keep the socket from filling up.
+    controlSocket.resume();
+    controlSocket.once('error', (err) => stop(`control socket error: ${err.message}`));
+    controlSocket.once('close', () => stop('control socket closed'));
+
     const parser = createVideoParser();
     socket.on('data', (chunk) => {
       try {
@@ -115,7 +140,15 @@ function startScrcpySession() {
 
   run().catch((err) => stop(err.message));
 
-  return { on: emitter.on.bind(emitter), stop, scid };
+  // Returns false when the message was dropped (not connected yet, or the device is not
+  // reading fast enough). Dropping is safer than queueing stale input.
+  function sendControl(buffer) {
+    if (isStopped || !controlSocket || controlSocket.writableLength > MAX_CONTROL_BACKLOG_BYTES) return false;
+    controlSocket.write(buffer);
+    return true;
+  }
+
+  return { on: emitter.on.bind(emitter), stop, sendControl, scid };
 }
 
 module.exports = { startScrcpySession, pushScrcpyServer };

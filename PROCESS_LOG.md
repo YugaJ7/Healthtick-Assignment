@@ -613,3 +613,123 @@ Whether an Android phone is available for local testing.
 **Not verified:** that the console path is exactly as described for this account; whether the nested virtualization setting survives a type change; the price difference between the two types.
 
 **Waiting on the user:** the new public IP after the restart.
+
+---
+
+## Entry 28 — Sun 4 Oct 2026, 12:26 IST
+
+**User prompts (verbatim), two in a row:**
+
+> now lets proceed further
+
+> before u proceed show me the checklist what we have completed and what is left
+
+**What happened:**
+
+- After the first prompt the AI tried to check over SSH whether the server still answered at the old address (the user had not sent a new IP after the planned instance type change). The user rejected that command and sent the second prompt. Nothing was run on the server.
+- For the second prompt the AI read CHECKLIST.md and reported status against it in chat. Summary given: no row is fully done by the checklist's own rule (evidence on the deployed version). In progress: C1 (live stream shown through an SSH tunnel, commit 07cf120), E1, E2 partly, K1/K2 (all components open source, licence table not written), K7 (time log partly filled), D8/A1/A2 (CLAUDE.md rule and PROCESS_LOG.md in the first commit). Not started: C2a, C2b, C2c, C3, C4, C5, B1, B2, B5, all other deliverables, K3 to K6. The AI did not change CHECKLIST.md.
+
+**Server state:** unknown to the AI (stopped or restarted with a new IP; type change not confirmed).
+
+**Waiting on the user:** the go-ahead and the server's current public IP.
+
+---
+
+## Entry 29 — Sun 4 Oct 2026, 12:33 IST
+
+**User prompt (verbatim):**
+
+> i have chnaged to m7i-flex.large this and instance stopped. Lets furthur in building
+
+**What the AI did: milestone M2 (input) code written; NOT yet run against a device, because the server is stopped.**
+
+**Source read first** (scrcpy v4.1, from raw.githubusercontent.com/Genymobile/scrcpy/v4.1): server/.../control/ControlMessageReader.java, ControlMessage.java, Controller.java, util/Binary.java and app/tests/test_control_msg_serialize.c. Confirmed: touch message 32 bytes (type, action, pointer id i64, x i32, y i32, width u16, height u16, pressure u16, action button i32, buttons i32); scroll message 21 bytes with amounts as signed 16-bit fixed point over the range -16 to 16; keycode message 14 bytes; text message with a 4-byte length; pointer id -1 means mouse, any other id is treated as a finger.
+
+**Design (AI's choices, for the user to question):**
+
+- The browser sends small JSON messages on the existing WebSocket: touch (down/move/up/cancel, pointer slot 0 to 9, x, y in video pixels), scroll, key (a named key from a fixed list), text. It never sends scrcpy bytes.
+- backend/src/controlMessages.js checks every field and builds the scrcpy bytes on the server. Only 14 named keys are allowed (Home, Back, AppSwitch, Enter, Backspace, Delete, Tab, Escape, four arrows, MoveHome, MoveEnd). The screen size in each message is the server's own record of the video size, not a value from the browser. This is the server-side allow-list that a later restriction bonus could build on.
+- Limits: WebSocket messages over 2048 bytes are refused by the ws library; more than 1000 input messages per second are dropped; more than 50 invalid messages close the connection.
+- frontend/pointerMap.mjs maps a pointer position to a video pixel using the canvas rectangle on each event, so window size, zoom and rotation need no special cases. frontend/input.mjs uses pointer events with pointer capture, the wheel for scroll, right-click for Back, printable keys as text and named keys as key events. Three on-page buttons: Back, Home, Recents.
+- scrcpySession.js now starts scrcpy-server with control=true and opens the control socket after the video socket.
+
+**Run and verified on the laptop:** node --check on all files; node --test: 31 tests, 31 pass. The control-message tests compare against scrcpy's own test vectors (touch and scroll), with the mouse-button fields zero.
+
+**NOT verified:** any input reaching a device. Open questions to test on the server: whether text injection handles characters such as !@# (scrcpy's inject-text path depends on the device's key character map; AI memory, not checked); the sign of horizontal scroll; behaviour on a touch-screen browser; that the on-screen keyboard cannot be opened from a phone browser because a canvas does not trigger it (known gap, not addressed). The automated "4 corners + centre" landing test from the master prompt is not written yet; only the pure mapping function is tested.
+
+**Errors and friction:** the GateGuard hook denied 5 new files and 3 first edits once each; two edits (frontend/app.mjs, frontend/index.html) had to be reapplied.
+
+**Waiting on the user:** start the instance and send its new public IP.
+
+---
+
+## Entry 30 — Sun 4 Oct 2026, 13:02 IST
+
+**User prompt (verbatim):**
+
+> 65.0.108.161
+
+**What the AI did (over SSH and through Chrome on the laptop via an SSH tunnel):**
+
+1. Confirmed the instance is now m7i-flex.large and /dev/kvm is still present. Loaded binder, started the existing redroid container (7 s to boot_completed), deployed the M2 code, started the backend.
+2. Landing test (master prompt: "clicks the 4 corners + centre and verifies landing positions"): sent pointer events through the page's handlers at three layouts of the screen image (310x551, 135x240, 150x267 with a fractional offset) and read the coordinates Android received from `dumpsys input`. All 15 taps landed on the exact target pixel. After rotating the device to landscape (1280x720) the page followed without a reload and 3 taps landed exactly.
+3. Typing: "Hello World 123 !@#" plus a character and Backspace appeared correctly in the launcher's search box, so symbols work on this image.
+4. Swipe opened the app drawer; wheel events arrived as SCROLL; the Home button worked. No input message was rejected by the server.
+5. Screenshots saved in spikes/out/ (m2-typing.png, m2-swipe.png, m2-landscape.png); numbers in NOTES.md.
+
+**Errors, dead ends and limits of this test:**
+
+- First attempt to read landing positions failed: the AI assumed Android's pointer-location overlay writes coordinates to logcat (tag "Pointer"). It does not on this image. Switched to `dumpsys input` RecentQueue, which holds only the last 10 events, so a background poller collected them during the run.
+- First rotation attempt did nothing: the launcher is portrait-only. Worked with the Settings app in front.
+- A scripted pointer event made `setPointerCapture` throw NotFoundError. The handler now tolerates that one error (a real pointer can also be gone by then); other errors still propagate.
+- A tap on the exact bottom-left corner also triggers BACK from the navigation bar (device behaviour).
+- Wheel scroll arrived at (359,639) for a request at (360,640). One pixel off; cause not investigated.
+- The landing test was driven by the AI through browser and SSH tools. It is NOT a script in the repo that someone else can run; only the pure mapping function has repeatable unit tests (31 tests pass). The events were scripted, not typed or clicked by a person, and only Chrome at one devicePixelRatio (1.25) was used. Not tested: a real touch screen, multi-touch, Firefox or Safari, long-press, arrow keys and Enter individually, the Back and Recents buttons, a phone browser (where typing is known not to work yet).
+
+**Commit:** M2 committed on main after these checks. Not pushed.
+
+**Waiting on the user:** to try input by hand at http://localhost:8080, and to say what comes next (the AI suggested deployment before the bonuses).
+
+---
+
+## Entry 31 — Sun 4 Oct 2026, 13:07 IST
+
+**User prompt (verbatim):**
+
+> what spikes use it. and why screenshot are being saved?
+
+**What the AI did:** explained that spikes/ holds the throwaway Phase 2 experiments (three scripts) and that the application in backend/ and frontend/ does not use them; and that spikes/out/ holds evidence files (probe output, screenshots, one video) saved because the master prompt says "Prove it ran" and the checklist asks for evidence per requirement. Admitted that the AI put the M1 and M2 screenshots into spikes/out/ although they are not spike output, which makes the folder name misleading, and offered to move evidence to a separate folder (for example docs/evidence/) and to drop the 3 MB video from the repo if the user prefers. No files were changed.
+
+**Waiting on the user:** whether to move or remove the evidence files, and what to build next.
+
+---
+
+## Entry 32 — Sun 4 Oct 2026, 13:10 IST
+
+**User prompt (verbatim):**
+
+> from now dont put these result in commit. Also provide me commit message and i will do.
+
+**Decision (user's):** (1) result files are to stay out of commits; (2) the user makes the commits; the AI only supplies the commit message.
+
+**What the AI did:**
+
+- Added `spikes/out/` and `evidence/` to .gitignore, so new screenshots and outputs are not staged. The AI will keep saving evidence locally in those folders.
+- Did not commit. Gave the user the files to stage and a commit message for this change.
+- Saved the instruction to the AI's project memory so it holds in later sessions.
+
+**AI's interpretation, to be corrected if wrong:** "these result" means screenshots, captured video and probe or spike output. PROCESS_LOG.md and NOTES.md are still committed, because the assignment requires the log to be committed throughout.
+
+**Not done, left for the user to decide:** the result files already committed in 78f092e and 0d5f9f2 (the spikes/out folder, about 4 MB including spike3.mp4) are still tracked. The ignore rule does not untrack them. The AI told the user the command that would untrack them and did not run it; removing them from history would need rewriting commits.
+
+**Context recorded earlier:** the first commit was redone by someone other than the AI (07cf120 replaced by 78f092e at 12:25 with a shorter message); the AI assumes it was the user.
+
+---
+
+## Entry 33 — Sun 4 Oct 2026, 13:10 IST (correction to Entries 30 and 32, no new user prompt)
+
+The AI checked the git history after writing Entry 32 and found that its M2 commit 0d5f9f2 is no longer on the branch: the reflog shows "reset: moving to HEAD~" after it. The AI did not run that reset, so it assumes the user did, in line with the instruction in Entry 32. Current state: one commit on main (78f092e); the M2 code and tests, NOTES.md and PROCESS_LOG.md are staged and uncommitted; the three M2 screenshots are not staged and are now ignored.
+
+So the statements "M2 committed on main" (Entry 30) and "committed in 78f092e and 0d5f9f2" (Entry 32) are out of date. Result files tracked by git are only those in 78f092e: seven files in the spikes/out folder, including spike3.mp4.
+
+The AI gave the user the list of files to stage and a commit message for M2, and did not commit.
