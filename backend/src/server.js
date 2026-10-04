@@ -11,17 +11,20 @@ const { encodeClientMessage, InputError } = require('./controlMessages');
 const { isAccessCodeValid, isOriginAllowed } = require('./access');
 const { ensureNetwork, removeOrphans, createDevice, removeDevice } = require('./deviceManager');
 const { createSessionManager, BusyError } = require('./sessionManager');
+const { isAllowedWhenRestricted, enforceRestriction } = require('./restriction');
 
 const STREAM_PATH = '/stream';
 const PACKET_HEADER_BYTES = 9;
 const FLAG_CONFIG = 0x01;
 const FLAG_KEY_FRAME = 0x02;
 const MAX_BUFFERED_BYTES = 4 * 1024 * 1024;
-const MAX_INPUT_MESSAGE_BYTES = 2048;
+const MAX_INPUT_MESSAGE_BYTES = 64 * 1024; // room for a pasted clipboard
+const MAX_CLIPBOARD_CHARS = 16 * 1024;
 const INPUT_WINDOW_MS = 1000;
 const MAX_INPUTS_PER_WINDOW = 1000;
 const MAX_REJECTED_INPUTS = 50;
 const HEARTBEAT_MS = 15_000;
+const RESTRICTION_CHECK_MS = 1000;
 const SHUTDOWN_GRACE_MS = 3000;
 const MIN_ACCESS_CODE_LENGTH = 8;
 const MAX_REASON_LENGTH = 100;
@@ -50,6 +53,7 @@ const STATIC_FILES = new Map([
   ['/h264.mjs', { file: 'h264.mjs', type: 'text/javascript; charset=utf-8' }],
   ['/input.mjs', { file: 'input.mjs', type: 'text/javascript; charset=utf-8' }],
   ['/pointerMap.mjs', { file: 'pointerMap.mjs', type: 'text/javascript; charset=utf-8' }],
+  ['/latency.mjs', { file: 'latency.mjs', type: 'text/javascript; charset=utf-8' }],
 ]);
 
 const sessions = createSessionManager({
@@ -123,6 +127,11 @@ function createInputHandler(ws, session, getStream) {
       if (isBinary) throw new InputError('binary input is not accepted');
       const message = parseJson(data);
       if (message !== null && message.t === 'end') return sessions.end(session, 'ended by user');
+      // Round-trip probe for the latency report; it never reaches the device.
+      if (message !== null && message.t === 'ping') return sendJson(ws, { type: 'pong', id: Number.isInteger(message.id) ? message.id : 0 });
+      // A restricted session may only send the actions on its list; anything else is
+      // dropped here, whatever page or script sent it.
+      if (session.mode === 'restricted' && !isAllowedWhenRestricted(message)) return;
       const stream = getStream();
       if (!stream) return; // the device is still starting; there is nothing to control yet
       stream.scrcpy.sendControl(encodeClientMessage(message, stream.videoSize));
@@ -140,9 +149,27 @@ function createInputHandler(ws, session, getStream) {
   };
 }
 
+// While someone is using a restricted device, checks every second that it is still
+// pinned on the allowed app, and re-applies the lock if it is not.
+function startRestrictionWatchdog(session, device) {
+  let isChecking = false;
+  return setInterval(async () => {
+    if (isChecking || session.isEnded) return;
+    isChecking = true;
+    try {
+      if (await enforceRestriction(device.serial)) logger.info(`session ${session.id} restriction was lost and re-applied`);
+    } catch (err) {
+      logger.error(`session ${session.id} restriction check failed: ${err.message}`);
+    } finally {
+      isChecking = false;
+    }
+  }, RESTRICTION_CHECK_MS);
+}
+
 // Starts scrcpy on the session's device and relays its video to this viewer.
 function startStream(ws, session, device) {
-  const stream = { scrcpy: startScrcpySession(device.serial), videoSize: null };
+  const stream = { scrcpy: startScrcpySession(device.serial), videoSize: null, watchdog: null };
+  if (session.mode === 'restricted') stream.watchdog = startRestrictionWatchdog(session, device);
   logger.info(`session ${session.id} streaming, scrcpy ${stream.scrcpy.scid}`);
 
   stream.scrcpy.on('event', (event) => {
@@ -153,6 +180,9 @@ function startStream(ws, session, device) {
     // Dropping it makes the page reconnect and resume from a fresh key frame.
     if (ws.bufferedAmount > MAX_BUFFERED_BYTES) return ws.close(WS_CLOSE_TRY_AGAIN, 'viewer too slow');
     ws.send(encodePacket(event));
+  });
+  stream.scrcpy.on('device', (message) => {
+    if (message.type === 'clipboard') sendJson(ws, { type: 'clipboard', text: message.text.slice(0, MAX_CLIPBOARD_CHARS) });
   });
   stream.scrcpy.on('close', (reason) => {
     logger.info(`session ${session.id} scrcpy ${stream.scrcpy.scid} closed: ${reason}`);
@@ -171,7 +201,9 @@ function handleViewer(ws, req) {
   };
   let session;
   try {
-    session = sessions.attach(params.get('session'), onSessionEnd);
+    // The mode only matters for a new session; an existing one keeps its own.
+    const mode = params.get('mode') === 'restricted' ? 'restricted' : 'full';
+    session = sessions.attach(params.get('session'), onSessionEnd, mode);
   } catch (err) {
     if (err instanceof BusyError) return ws.close(WS_CLOSE_BUSY, 'all devices are in use');
     logger.error(`could not open a session: ${err.stack || err.message}`);
@@ -179,18 +211,21 @@ function handleViewer(ws, req) {
   }
 
   let stream = null;
-  sendJson(ws, { type: 'device', state: 'starting', token: session.token });
+  sendJson(ws, { type: 'device', state: 'starting', token: session.token, mode: session.mode });
   ws.on('message', createInputHandler(ws, session, () => stream));
   ws.on('error', (err) => logger.info(`session ${session.id} viewer socket error: ${err.message}`));
   ws.on('close', () => {
-    if (stream) stream.scrcpy.stop('viewer disconnected');
+    if (stream) {
+      clearInterval(stream.watchdog);
+      stream.scrcpy.stop('viewer disconnected');
+    }
     sessions.detach(session, onSessionEnd);
   });
 
   // If the device fails to start, the session ends and onSessionEnd closes this viewer.
   session.ready.then((device) => {
     if (ws.readyState !== ws.OPEN || session.isEnded) return;
-    sendJson(ws, { type: 'device', state: 'ready' });
+    sendJson(ws, { type: 'device', state: 'ready', mode: session.mode });
     stream = startStream(ws, session, device);
   }, () => {});
 }

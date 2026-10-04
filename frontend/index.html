@@ -24,6 +24,16 @@
     section { display: flex; flex-direction: column; gap: 12px; align-items: center; padding: 8px 16px 16px; text-align: center; }
     section p { margin: 0; }
     #status[data-state="ended"]::before { background: #9aa0a6; }
+    /* A Clock-only session has no Home or Recents; the server ignores them anyway. */
+    body[data-mode="restricted"] button[data-key="Home"], body[data-mode="restricted"] button[data-key="AppSwitch"] { display: none; }
+    #tools { padding: 0 16px 12px; font-size: 14px; text-align: center; }
+    .tool { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
+    #tools p { margin: 8px 0 0; min-height: 1.2em; color: #9aa0a6; }
+    textarea { width: 220px; max-width: 100%; min-height: 40px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; resize: vertical; }
+    textarea:focus-visible, summary:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
+    details { margin-top: 8px; color: #9aa0a6; }
+    summary { cursor: pointer; }
+    pre { max-height: 160px; overflow: auto; text-align: left; white-space: pre-wrap; }
     input { min-height: 40px; padding: 0 12px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; }
     input:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
     button { min-width: 88px; min-height: 40px; padding: 8px 16px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; cursor: pointer; }
@@ -48,8 +58,23 @@
     <button type="button" data-key="Back">Back</button>
     <button type="button" data-key="Home">Home</button>
     <button type="button" data-key="AppSwitch">Recents</button>
+    <button type="button" id="switch-mode">Switch to Clock only</button>
     <button type="button" id="end-session">End session</button>
   </nav>
+  <div id="tools">
+    <div class="tool">
+      <button type="button" id="paste">Paste into device</button>
+      <label for="device-clipboard">Copied on the device</label>
+      <textarea id="device-clipboard" rows="1" readonly></textarea>
+      <button type="button" id="copy-device">Copy</button>
+    </div>
+    <p id="clipboard-note" role="status"></p>
+    <details>
+      <summary>Latency test</summary>
+      <button type="button" id="latency-run">Run 40 taps</button>
+      <pre id="latency-result" role="status"></pre>
+    </details>
+  </div>
   <section id="ended" hidden>
     <p id="ended-reason"></p>
     <button type="button" id="new-session">Start a new session</button>

@@ -83,6 +83,9 @@ export function attachInput(canvas, send) {
   }, { passive: false });
 
   canvas.addEventListener('keydown', (event) => {
+    // Ctrl+C copies the device's selection; the device then reports its clipboard.
+    // Ctrl+V is left to the browser, which fires the paste event handled below.
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') send({ t: 'copy' });
     if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
     const special = SPECIAL_KEYS.get(event.key);
     if (special) {
@@ -94,6 +97,13 @@ export function attachInput(canvas, send) {
       event.preventDefault();
       send({ t: 'text', text: event.key });
     }
+  });
+
+  canvas.addEventListener('paste', (event) => {
+    const text = event.clipboardData ? event.clipboardData.getData('text') : '';
+    if (text === '') return;
+    event.preventDefault();
+    send({ t: 'paste', text });
   });
 
   canvas.addEventListener('keyup', (event) => {

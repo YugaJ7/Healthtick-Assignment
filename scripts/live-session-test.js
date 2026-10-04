@@ -79,12 +79,13 @@ async function main() {
   check('each session got its own device', nameA !== nameB && exists(nameA) && exists(nameB), `${a.readyMs} ms and ${b.readyMs} ms to ready`);
 
   // --- isolation: what A does is invisible to B ---
-  inDevice(nameA, 'echo secret-of-a > /sdcard/Download/a.txt && settings put system screen_brightness 77 && pm disable-user --user 0 com.android.gallery3d');
+  inDevice(nameA, 'mkdir -p /sdcard/Download && echo secret-of-a > /sdcard/Download/a.txt && settings put system screen_brightness 77 && pm disable-user --user 0 com.android.gallery3d');
   check('A sees its own file, setting and app change',
     inDevice(nameA, 'cat /sdcard/Download/a.txt') === 'secret-of-a'
     && inDevice(nameA, 'settings get system screen_brightness') === '77'
     && inDevice(nameA, 'pm list packages -d').includes('com.android.gallery3d'));
-  check('B does not see A\'s file', inDevice(nameB, 'ls /sdcard/Download/').includes('a.txt') === false);
+  // On a new device the folder may not exist yet; that also means the file is not there.
+  check('B does not see A\'s file', inDevice(nameB, 'ls /sdcard/Download/a.txt 2>/dev/null; true') === '');
   check('B does not see A\'s setting', inDevice(nameB, 'settings get system screen_brightness') !== '77');
   check('B does not see A\'s app change', inDevice(nameB, 'pm list packages -d').includes('com.android.gallery3d') === false);
   const ipA = docker(['inspect', '-f', '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}', nameA]);

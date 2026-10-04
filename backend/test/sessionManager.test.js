@@ -175,6 +175,26 @@ test('a second viewer with the same token replaces the first', (t) => {
   assert.equal(manager.count(), 1);
 });
 
+test('the mode is fixed when the session is created and cannot be changed by reconnecting', async (t) => {
+  const modes = [];
+  const { manager } = setup(t, {
+    createDevice: async (id, mode) => {
+      modes.push(mode);
+      return { name: `device-${id}` };
+    },
+  });
+
+  const restricted = manager.attach(null, () => {}, 'restricted');
+  const again = manager.attach(restricted.token, () => {}, 'full');
+  const plain = manager.attach(null, () => {});
+  await settle();
+
+  assert.equal(again, restricted);
+  assert.equal(again.mode, 'restricted');
+  assert.equal(plain.mode, 'full');
+  assert.deepEqual(modes, ['restricted', 'full']);
+});
+
 test('endAll removes every device', async (t) => {
   const { manager, removed } = setup(t);
   manager.attach(null, () => {});

@@ -7,6 +7,7 @@ const { adb, adbShellSpawn } = require('./adb');
 const { config } = require('./config');
 const { logger } = require('./logger');
 const { createVideoParser } = require('./videoParser');
+const { createDeviceMessageParser } = require('./deviceMessages');
 
 const SCID_LIMIT = 2 ** 31;
 const CONNECT_ATTEMPTS = 50;
@@ -77,6 +78,7 @@ function openControlSocket(port) {
 
 // One scrcpy-server instance on the device `serial`, with its video and control sockets. Emits:
 //   'event' (codec | session | packet objects from the parser)
+//   'device' (messages from the device, currently { type: 'clipboard', text })
 //   'close' (reason string), exactly once
 function startScrcpySession(serial) {
   const emitter = new EventEmitter();
@@ -116,9 +118,15 @@ function startScrcpySession(serial) {
 
     controlSocket = await openControlSocket(port);
     if (isStopped) return controlSocket.destroy();
-    // The device also talks on this socket (clipboard, acknowledgements). Nothing uses
-    // that yet, so it is read and dropped to keep the socket from filling up.
-    controlSocket.resume();
+    // The device also talks on this socket: it reports clipboard changes.
+    const deviceParser = createDeviceMessageParser();
+    controlSocket.on('data', (chunk) => {
+      try {
+        for (const message of deviceParser.push(chunk)) emitter.emit('device', message);
+      } catch (err) {
+        stop(`bad device message: ${err.message}`);
+      }
+    });
     controlSocket.once('error', (err) => stop(`control socket error: ${err.message}`));
     controlSocket.once('close', () => stop('control socket closed'));
 

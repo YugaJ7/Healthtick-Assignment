@@ -9,13 +9,20 @@ const TYPE_INJECT_KEYCODE = 0;
 const TYPE_INJECT_TEXT = 1;
 const TYPE_INJECT_TOUCH_EVENT = 2;
 const TYPE_INJECT_SCROLL_EVENT = 3;
+const TYPE_GET_CLIPBOARD = 8;
+const TYPE_SET_CLIPBOARD = 9;
 
 const KEYCODE_MESSAGE_BYTES = 14;
 const TOUCH_MESSAGE_BYTES = 32;
 const SCROLL_MESSAGE_BYTES = 21;
 const TEXT_HEADER_BYTES = 5;
 
+const CLIPBOARD_HEADER_BYTES = 14;
+const COPY_KEY_COPY = 1; // ask the device to press "copy" before it reports its clipboard
+const PASTE_AFTER_SET = 1;
+
 const MAX_TEXT_BYTES = 300; // scrcpy's own limit for one text message
+const MAX_CLIPBOARD_BYTES = 16 * 1024; // our limit; scrcpy itself allows about 256 KB
 const MAX_POINTERS = 10;
 const MAX_SCROLL = 16; // scrcpy encodes scroll amounts in the range [-16, 16]
 const PRESSURE_FULL = 0xffff;
@@ -106,6 +113,23 @@ function encodeText(message) {
   return Buffer.concat([header, text]);
 }
 
+// Sets the device clipboard to the text and pastes it into the focused field.
+function encodePaste(message) {
+  if (typeof message.text !== 'string' || message.text.length === 0) throw new InputError('text must be a non-empty string');
+  const text = Buffer.from(message.text, 'utf8');
+  if (text.length > MAX_CLIPBOARD_BYTES) throw new InputError(`clipboard text is longer than ${MAX_CLIPBOARD_BYTES} bytes`);
+  const header = Buffer.alloc(CLIPBOARD_HEADER_BYTES); // the sequence number (bytes 1-8) stays 0: no acknowledgement wanted
+  header[0] = TYPE_SET_CLIPBOARD;
+  header[9] = PASTE_AFTER_SET;
+  header.writeUInt32BE(text.length, 10);
+  return Buffer.concat([header, text]);
+}
+
+// Asks the device to copy the current selection; it answers with a clipboard message.
+function encodeCopy() {
+  return Buffer.from([TYPE_GET_CLIPBOARD, COPY_KEY_COPY]);
+}
+
 /**
  * @param {unknown} message parsed JSON from the browser
  * @param {{ width: number, height: number } | null} videoSize current video size, null before the first frame
@@ -116,6 +140,8 @@ function encodeClientMessage(message, videoSize) {
   if (message === null || typeof message !== 'object' || Array.isArray(message)) throw new InputError('message must be an object');
   if (message.t === 'key') return encodeKey(message);
   if (message.t === 'text') return encodeText(message);
+  if (message.t === 'paste') return encodePaste(message);
+  if (message.t === 'copy') return encodeCopy();
   if (message.t === 'touch' || message.t === 'scroll') {
     if (!videoSize) throw new InputError('no video yet');
     return message.t === 'touch' ? encodeTouch(message, videoSize) : encodeScroll(message, videoSize);
@@ -123,4 +149,4 @@ function encodeClientMessage(message, videoSize) {
   throw new InputError('unknown message type');
 }
 
-module.exports = { encodeClientMessage, InputError, MAX_TEXT_BYTES };
+module.exports = { encodeClientMessage, InputError, MAX_TEXT_BYTES, MAX_CLIPBOARD_BYTES };

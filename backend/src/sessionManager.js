@@ -14,7 +14,7 @@ class BusyError extends Error {}
 
 /**
  * @param {object} options
- * @param {(id: string) => Promise<object>} options.createDevice
+ * @param {(id: string, mode: string) => Promise<object>} options.createDevice
  * @param {(device: object) => Promise<void>} options.removeDevice
  * @param {number} options.maxSessions
  * @param {number} options.graceMs
@@ -41,17 +41,17 @@ function createSessionManager({ createDevice, removeDevice, maxSessions, graceMs
     session.idleTimer = setTimeout(() => end(session, 'idle'), idleMs);
   }
 
-  function create() {
+  function create(mode) {
     if (sessions.size >= maxSessions) throw new BusyError('all devices are in use');
     const token = crypto.randomBytes(TOKEN_BYTES).toString('hex');
     // The id appears in logs and container names; the token is the secret and never does.
     const id = crypto.createHash('sha256').update(token).digest('hex').slice(0, ID_LENGTH);
-    const session = { token, id, isEnded: false, isAttached: false, onEnd: null, graceTimer: null, idleTimer: null, ready: null };
-    session.ready = createDevice(id);
+    const session = { token, id, mode, isEnded: false, isAttached: false, onEnd: null, graceTimer: null, idleTimer: null, ready: null };
+    session.ready = createDevice(id, mode);
     session.ready.catch((err) => end(session, `device failed: ${err.message}`));
     sessions.set(token, session);
     restartIdleTimer(session);
-    log(`session ${id} created (${sessions.size}/${maxSessions})`);
+    log(`session ${id} created, ${mode} (${sessions.size}/${maxSessions})`);
     return session;
   }
 
@@ -59,11 +59,13 @@ function createSessionManager({ createDevice, removeDevice, maxSessions, graceMs
    * Attaches a viewer. A known token resumes that session; anything else starts a new one.
    * @param {string | null} token
    * @param {(reason: string) => void} onEnd called once if the session ends while attached
+   * @param {'full' | 'restricted'} mode used only when a new session is created; an
+   *   existing session keeps the mode it was created with
    * @throws {BusyError} when a new session is needed and none is free
    */
-  function attach(token, onEnd) {
+  function attach(token, onEnd, mode = 'full') {
     const existing = token ? sessions.get(token) : undefined;
-    const session = existing ?? create();
+    const session = existing ?? create(mode);
     // A second viewer with the same token replaces the first.
     if (session.isAttached && session.onEnd) session.onEnd('opened in another window');
     clearTimeout(session.graceTimer);

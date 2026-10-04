@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { encodeClientMessage, InputError, MAX_TEXT_BYTES } = require('../src/controlMessages');
+const { encodeClientMessage, InputError, MAX_TEXT_BYTES, MAX_CLIPBOARD_BYTES } = require('../src/controlMessages');
 
 const VIDEO = { width: 1080, height: 1920 };
 const hex = (buffer) => buffer.toString('hex');
@@ -99,6 +99,30 @@ test('refuses values that are not objects', () => {
   for (const value of [null, 'touch', 5, [], undefined]) {
     assert.throws(() => encodeClientMessage(value, VIDEO), InputError);
   }
+});
+
+test('encodes a paste like scrcpy does (set clipboard, then paste)', () => {
+  const buffer = encodeClientMessage({ t: 'paste', text: 'hello, world!' });
+
+  assert.equal(buffer.length, 27);
+  assert.equal(hex(buffer), ['09', '0000000000000000', '01', '0000000d', Buffer.from('hello, world!').toString('hex')].join(''));
+});
+
+test('paste keeps non-English text as UTF-8', () => {
+  const buffer = encodeClientMessage({ t: 'paste', text: 'नमस्ते' });
+
+  assert.equal(buffer.readUInt32BE(10), Buffer.byteLength('नमस्ते'));
+  assert.equal(buffer.subarray(14).toString('utf8'), 'नमस्ते');
+});
+
+test('refuses empty, non-string and over-long paste text', () => {
+  assert.throws(() => encodeClientMessage({ t: 'paste', text: '' }), InputError);
+  assert.throws(() => encodeClientMessage({ t: 'paste', text: null }), InputError);
+  assert.throws(() => encodeClientMessage({ t: 'paste', text: 'a'.repeat(MAX_CLIPBOARD_BYTES + 1) }), InputError);
+});
+
+test('encodes a copy request (get clipboard with the copy key)', () => {
+  assert.equal(hex(encodeClientMessage({ t: 'copy' })), '0801');
 });
 
 test('refuses empty, non-string and over-long text', () => {

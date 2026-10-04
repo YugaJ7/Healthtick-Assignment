@@ -1,5 +1,6 @@
 import { codecStringFromConfig, concatBytes } from './h264.mjs';
 import { attachInput } from './input.mjs';
+import { createLatencyProbe, summarize } from './latency.mjs';
 
 const PACKET_HEADER_BYTES = 9;
 const FLAG_CONFIG = 0x01;
@@ -15,6 +16,13 @@ const BUSY_RETRY_MS = 5000;
 const ACCESS_CODE_KEY = 'accessCode';
 // Identifies this tab's device session, so a short network drop resumes the same device.
 const SESSION_TOKEN_KEY = 'sessionToken';
+// 'full' is the whole device; 'restricted' is one app only, enforced by the server.
+const SESSION_MODE_KEY = 'sessionMode';
+const MAX_TRACKED_FRAMES = 120;
+const LATENCY_TRIALS = 40;
+const ROUND_TRIP_PINGS = 10;
+const PING_TIMEOUT_MS = 2000;
+const PROBE_POINTER_ID = 9;
 
 const canvas = document.getElementById('screen');
 const statusEl = document.getElementById('status');
@@ -25,6 +33,10 @@ const endedPanel = document.getElementById('ended');
 const endedReason = document.getElementById('ended-reason');
 const deviceButtons = document.getElementById('device-buttons');
 const context = canvas.getContext('2d');
+const clipboardNote = document.getElementById('clipboard-note');
+const deviceClipboard = document.getElementById('device-clipboard');
+const latencyResult = document.getElementById('latency-result');
+const switchModeButton = document.getElementById('switch-mode');
 
 let socket = null;
 let decoder = null;
@@ -33,32 +45,51 @@ let isWaitingForKeyFrame = true;
 let latestFrame = null; // only the newest decoded frame is kept; older ones are dropped
 let reconnectDelayMs = RECONNECT_MIN_MS;
 let framesDrawn = 0;
+let lastPastedText = null;
+let isSwitchingMode = false;
+const shouldDrawOnAnimationFrame = new URLSearchParams(location.search).get('draw') === 'raf';
 const input = attachInput(canvas, (message) => sendMessage(message));
+const frameArrivals = new Map(); // frame timestamp -> when its data reached this page
+const pendingPings = new Map(); // ping id -> function that settles it
+const probe = createLatencyProbe({ canvas, context, send: (message) => sendMessage(message), pointerId: PROBE_POINTER_ID });
 
 function setStatus(state, text) {
   statusEl.dataset.state = state;
   statusEl.textContent = text;
 }
 
+function drawFrame(frame) {
+  if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
+    canvas.width = frame.displayWidth;
+    canvas.height = frame.displayHeight;
+  }
+  context.drawImage(frame, 0, 0);
+  const arrivedAt = frameArrivals.get(frame.timestamp);
+  frameArrivals.delete(frame.timestamp);
+  frame.close();
+  framesDrawn += 1;
+  probe.onFrameDrawn(arrivedAt);
+}
+
+// Older drawing path, kept only to compare latency (open the page with ?draw=raf):
+// the newest frame waits for the browser's next animation frame.
 function drawLatestFrame() {
   if (latestFrame) {
     const frame = latestFrame;
     latestFrame = null;
-    if (canvas.width !== frame.displayWidth || canvas.height !== frame.displayHeight) {
-      canvas.width = frame.displayWidth;
-      canvas.height = frame.displayHeight;
-    }
-    context.drawImage(frame, 0, 0);
-    frame.close();
-    framesDrawn += 1;
+    drawFrame(frame);
   }
   requestAnimationFrame(drawLatestFrame);
 }
 
+// By default a frame is drawn the moment it is decoded. Waiting for the next animation
+// frame adds up to one screen refresh of delay, and browsers slow animation frames to
+// about one per second in a window that is not in front.
 function onDecodedFrame(frame) {
+  setStatus('live', document.body.dataset.mode === 'restricted' ? 'Live, Clock app only' : 'Live');
+  if (!shouldDrawOnAnimationFrame) return drawFrame(frame);
   if (latestFrame) latestFrame.close();
   latestFrame = frame;
-  setStatus('live', 'Live');
 }
 
 function closeDecoder() {
@@ -94,6 +125,8 @@ function handlePacket(buffer) {
   if (isWaitingForKeyFrame && !isKeyFrame) return;
   isWaitingForKeyFrame = false;
 
+  frameArrivals.set(ptsUs, performance.now());
+  if (frameArrivals.size > MAX_TRACKED_FRAMES) frameArrivals.delete(frameArrivals.keys().next().value);
   decoder.decode(new EncodedVideoChunk({
     type: isKeyFrame ? 'key' : 'delta',
     timestamp: ptsUs,
@@ -107,23 +140,128 @@ function handleMessage(event) {
     const message = JSON.parse(event.data);
     if (message.type === 'codec' && message.codec !== 'h264') throw new Error(`unsupported codec ${message.codec}`);
     if (message.type === 'device') handleDeviceState(message);
+    // The device also reports the text we just pasted into it; that is not a device copy.
+    if (message.type === 'clipboard' && message.text !== lastPastedText) showDeviceClipboard(message.text);
+    if (message.type === 'pong' && pendingPings.has(message.id)) pendingPings.get(message.id)();
   } catch (err) {
     restart(err.message);
   }
 }
 
+function wantedMode() {
+  const fromLink = new URLSearchParams(location.search).get('mode');
+  const stored = sessionStorage.getItem(SESSION_MODE_KEY);
+  return (stored || fromLink) === 'restricted' ? 'restricted' : 'full';
+}
+
+// Shows which kind of session the server gave us. The server decides; this is display only.
+function showMode(mode) {
+  document.body.dataset.mode = mode;
+  switchModeButton.textContent = mode === 'restricted' ? 'Switch to full device' : 'Switch to Clock only';
+}
+
+// Ends this session and starts a new one of the other kind (a new device either way).
+function switchMode() {
+  sessionStorage.setItem(SESSION_MODE_KEY, document.body.dataset.mode === 'restricted' ? 'full' : 'restricted');
+  isSwitchingMode = true;
+  sendMessage({ t: 'end' });
+}
+
 function handleDeviceState(message) {
   if (message.token) sessionStorage.setItem(SESSION_TOKEN_KEY, message.token);
+  if (message.mode) showMode(message.mode);
   if (message.state === 'starting') setStatus('connecting', 'Starting your Android device (about 10 seconds)');
   if (message.state === 'ready') setStatus('connecting', 'Device ready, waiting for video');
 }
 
 function showSessionEnded(reason) {
   sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  if (isSwitchingMode) {
+    isSwitchingMode = false;
+    setStatus('connecting', 'Connecting');
+    return connect();
+  }
   setStatus('ended', 'Session ended');
   endedReason.textContent = `Session ended: ${reason || 'no reason given'}. The device and everything on it were removed.`;
   endedPanel.hidden = false;
   deviceButtons.hidden = true;
+}
+
+// Browsers only allow clipboard access on HTTPS and usually only right after a click or
+// key press, so every step says plainly whether it worked.
+async function showDeviceClipboard(text) {
+  deviceClipboard.value = text;
+  try {
+    await navigator.clipboard.writeText(text);
+    clipboardNote.textContent = 'Copied from the device to this computer.';
+  } catch {
+    clipboardNote.textContent = 'The device copied some text. Press Copy to put it on this computer.';
+  }
+}
+
+async function copyDeviceClipboard() {
+  try {
+    await navigator.clipboard.writeText(deviceClipboard.value);
+    clipboardNote.textContent = 'Copied to this computer.';
+  } catch {
+    deviceClipboard.select();
+    clipboardNote.textContent = 'This browser blocked copying. The text is selected: press Ctrl+C.';
+  }
+}
+
+async function pasteIntoDevice() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (text === '') {
+      clipboardNote.textContent = 'The clipboard of this computer has no text.';
+      return;
+    }
+    sendMessage({ t: 'paste', text });
+    clipboardNote.textContent = 'Pasted into the device.';
+  } catch {
+    clipboardNote.textContent = 'This browser blocked reading the clipboard. Click the screen and press Ctrl+V instead.';
+  }
+  canvas.focus();
+}
+
+function pingOnce(id) {
+  return new Promise((resolve) => {
+    const startedAt = performance.now();
+    const timer = setTimeout(() => {
+      pendingPings.delete(id);
+      resolve(null);
+    }, PING_TIMEOUT_MS);
+    pendingPings.set(id, () => {
+      clearTimeout(timer);
+      pendingPings.delete(id);
+      resolve(performance.now() - startedAt);
+    });
+    sendMessage({ t: 'ping', id });
+  });
+}
+
+async function runLatencyTest() {
+  latencyResult.textContent = 'Measuring the round trip to the server';
+  const roundTrips = [];
+  for (let id = 1; id <= ROUND_TRIP_PINGS; id += 1) {
+    const ms = await pingOnce(id);
+    if (ms !== null) roundTrips.push(ms);
+  }
+  const result = await probe.run(LATENCY_TRIALS, (done) => {
+    latencyResult.textContent = `Tap ${done} of ${LATENCY_TRIALS}`;
+  });
+  const report = {
+    when: new Date().toISOString(),
+    inputToDisplayMs: result.total,
+    browserPartMs: result.browser,
+    roundTripToServerMs: summarize(roundTrips),
+    timeouts: result.timeouts,
+    samplesMs: result.samplesMs,
+    video: `${canvas.width}x${canvas.height}`,
+    browser: navigator.userAgent,
+  };
+  latencyResult.textContent = JSON.stringify(report, null, 2);
+  return report;
 }
 
 function restart(reason) {
@@ -132,6 +270,7 @@ function restart(reason) {
 }
 
 function sendMessage(message) {
+  if (message.t === 'paste') lastPastedText = message.text;
   if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
 }
 
@@ -170,7 +309,7 @@ function handleClose(event) {
 
 function connect() {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const query = new URLSearchParams({ code: readAccessCode() });
+  const query = new URLSearchParams({ code: readAccessCode(), mode: wantedMode() });
   const sessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
   if (sessionToken) query.set('session', sessionToken);
   socket = new WebSocket(`${scheme}://${location.host}/stream?${query}`);
@@ -193,7 +332,7 @@ function start() {
     if (framesDrawn > 0) reconnectDelayMs = RECONNECT_MIN_MS;
     framesDrawn = 0;
   }, STATS_INTERVAL_MS);
-  requestAnimationFrame(drawLatestFrame);
+  if (shouldDrawOnAnimationFrame) requestAnimationFrame(drawLatestFrame);
   for (const button of document.querySelectorAll('button[data-key]')) {
     button.addEventListener('click', () => {
       input.sendKeyPress(button.dataset.key);
@@ -201,6 +340,10 @@ function start() {
     });
   }
   document.getElementById('end-session').addEventListener('click', () => sendMessage({ t: 'end' }));
+  switchModeButton.addEventListener('click', switchMode);
+  document.getElementById('paste').addEventListener('click', pasteIntoDevice);
+  document.getElementById('copy-device').addEventListener('click', copyDeviceClipboard);
+  document.getElementById('latency-run').addEventListener('click', runLatencyTest);
   document.getElementById('new-session').addEventListener('click', () => {
     endedPanel.hidden = true;
     deviceButtons.hidden = false;

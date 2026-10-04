@@ -175,3 +175,41 @@ Gotchas:
 - The backend's user is in the `docker` group, which is equivalent to root on the server.
 - Devices run `--privileged` (redroid needs it): weaker isolation than a VM.
 - After a backend crash the user's device is gone (new device on reconnect).
+
+## Latency, clipboard and idle timeout, Sun 4 Oct ~14:20 to 15:10 IST
+
+Latency (full report in LATENCY.md): 40 taps, public link, Chrome 154 on the laptop, one session.
+
+| Run | Median | p95 | Min | Max | Round trip | Browser part |
+|---|---|---|---|---|---|---|
+| 30 fps (deployed) | 165 ms | 191 ms | 141 | 196 | 28 ms | 11 ms |
+| 60 fps (not kept) | 150 ms | 181 ms | 124 | 225 | 27 ms | 8 ms |
+
+- 60 fps cost: one device with a moving screen used 189 % CPU (of 200 %). Still screen: under 1 %.
+- Idle timeout on the real server: a client that connected and sent nothing was closed with code 4410 "idle" after 5 minutes (log: "session e9ae0cb0 ended: idle"), and no device was left.
+- Clipboard: text with Hindi characters pasted from the page arrived in the device's search field (device log: "Device clipboard set", "Search pasted from your clipboard"). A word selected on the device ("ONLY") and copied with Ctrl+C from the page appeared in the page's "Copied on the device" box.
+- Live session test re-run on the open site: 16 of 16 pass.
+
+Gotchas:
+- `show_touches` draws nothing on redroid with software rendering, so it cannot be used as a visible reaction.
+- Browsers slow `requestAnimationFrame` to about one call per second in a window that is not in front. Anything drawn or measured there is misleading. The page now draws each frame when it is decoded.
+- `input keycombination 113 29` (Ctrl+A) typed an "a" on this image instead of selecting all.
+- On a brand-new device `/sdcard/Download` may not exist yet.
+- At backend shutdown the log shows "adb: error: cannot connect to daemon / failed to start daemon" (adb is asked to disconnect while the service is stopping). Harmless so far; not investigated.
+- One unexplained disconnect of the AI's test browser (viewer side) during the clipboard test; it did not happen again.
+
+## B4 single-app restriction (Clock), Sun 4 Oct ~15:15 to 15:35 IST
+
+Findings on a throwaway device:
+
+- Clock is `com.android.deskclock/.DeskClock`. Launchable apps on the image: calendar, contacts, deskclock, gallery3d, settings, documentsui, quicksearchbox, webview_shell. Home apps: launcher3, and Settings' FallbackHome.
+- `am task lock <taskId>` from the shell starts lock task mode in state PINNED (screen pinning, not the device-owner LOCKED state). In it: Home and Recents keys do nothing, `cmd statusbar expand-notifications` does nothing, `am start` of Settings fails with error 101 (lock task violation).
+- `am task lock` prints "Activity manager is not in lockTaskMode" even when it worked; read the state from `dumpsys activity activities | grep mLockTaskModeState`.
+- With the other apps disabled (`pm disable-user --user 0 ...`), Clock is the only launchable app; even with the pin removed, Home stays on Clock.
+- State check costs about 50 ms; re-applying the pin about 170 ms.
+- Clock's "Change date & time" starts `android.settings.DATE_SETTINGS`; with Settings disabled this throws ActivityNotFoundException and Clock crashes. The watchdog reopens it.
+- First watchdog version used the focused window and raised a false alarm every second while a Clock menu was open (the menu is its own window). Now uses the resumed activity.
+
+Results: `scripts/live-restriction-test.js` 15 of 15 pass; restricted session ready in about 5 s; switching mode from the page gives a new device in about 5.6 s; `scripts/live-session-test.js` still 16 of 16.
+
+Left in the log at session end: `adb ... forward --remove ... device not found` (the forward is removed after the device is already gone). Harmless, not fixed.

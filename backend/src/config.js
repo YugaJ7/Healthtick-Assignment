@@ -34,6 +34,18 @@ const config = Object.freeze({
     fps: intFromEnv('DEVICE_FPS', 30),
     bootTimeoutMs: intFromEnv('DEVICE_BOOT_TIMEOUT_MS', 90_000),
   }),
+  // "Restricted" sessions may use this one app only (see restriction.js).
+  restricted: Object.freeze({
+    packageName: process.env.RESTRICTED_PACKAGE || 'com.android.deskclock',
+    activity: process.env.RESTRICTED_ACTIVITY || '.DeskClock',
+    // Every other app on the redroid image that can be opened or that hosts screens
+    // reachable from another app (Settings, the file picker).
+    disabledPackages: Object.freeze([
+      'com.android.settings', 'com.android.launcher3', 'com.android.documentsui',
+      'com.android.gallery3d', 'com.android.contacts', 'com.android.calendar',
+      'com.android.quicksearchbox', 'org.chromium.webview_shell', 'com.android.deskclock',
+    ]),
+  }),
   scrcpy: Object.freeze({
     version: SCRCPY_VERSION,
     localJar: process.env.SCRCPY_SERVER_PATH || path.resolve(__dirname, '..', 'vendor', `scrcpy-server-v${SCRCPY_VERSION}`),

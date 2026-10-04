@@ -4,6 +4,7 @@ const { execFile } = require('node:child_process');
 const { adb, adbConnect, adbDisconnect } = require('./adb');
 const { config } = require('./config');
 const { logger } = require('./logger');
+const { applyRestriction } = require('./restriction');
 
 // Every Android device is its own redroid container: its own file system, settings and
 // apps. Containers are created for one session and removed with it, so nothing carries
@@ -59,9 +60,10 @@ async function waitForBoot(serial, deadline) {
 /**
  * Creates and boots one device. On any failure the container is removed again.
  * @param {string} id short identifier used in the container name
+ * @param {'full' | 'restricted'} mode a restricted device is locked to one app before it is handed out
  * @returns {Promise<{ name: string, serial: string }>}
  */
-async function createDevice(id) {
+async function createDevice(id, mode) {
   const name = `${NAME_PREFIX}${id}`;
   const { image, network, memory, width, height, fps, bootTimeoutMs } = config.device;
   try {
@@ -79,6 +81,7 @@ async function createDevice(id) {
     const serial = `127.0.0.1:${port}`;
     await waitForBoot(serial, Date.now() + bootTimeoutMs);
     await adb(serial, ['push', config.scrcpy.localJar, config.scrcpy.deviceJar]);
+    if (mode === 'restricted') await applyRestriction(serial);
     return { name, serial };
   } catch (err) {
     await removeDevice({ name, serial: null });
