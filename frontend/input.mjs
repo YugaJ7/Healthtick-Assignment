@@ -12,6 +12,59 @@ const SPECIAL_KEYS = new Map([
 ]);
 
 /**
+ * What was typed between two states of a text field: how many characters were removed
+ * from the end, and what was added. On-screen keyboards rewrite the word being typed as
+ * they predict and correct, so comparing the whole field is the only reliable reading.
+ * @param {string} before
+ * @param {string} after
+ * @returns {{ backspaces: number, text: string }}
+ */
+export function diffTyping(before, after) {
+  const a = [...before];
+  const b = [...after];
+  let same = 0;
+  while (same < a.length && same < b.length && a[same] === b[same]) same += 1;
+  return { backspaces: a.length - same, text: b.slice(same).join('') };
+}
+
+const MAX_KEYBOARD_BUFFER = 200;
+
+/**
+ * Sends what is typed into `field` with a phone's on-screen keyboard to the device.
+ * @param {HTMLTextAreaElement} field an invisible text field; focusing it opens the keyboard
+ * @param {(message: object) => void} send
+ */
+export function attachSoftKeyboard(field, send) {
+  let previous = '';
+  const press = (key) => {
+    send({ t: 'key', a: 'down', key });
+    send({ t: 'key', a: 'up', key });
+  };
+  const reset = () => {
+    field.value = '';
+    previous = '';
+  };
+  field.addEventListener('input', () => {
+    const { backspaces, text } = diffTyping(previous, field.value);
+    for (let i = 0; i < backspaces; i += 1) press('Backspace');
+    // A line break in the field is the keyboard's Enter key.
+    text.split('\n').forEach((part, index) => {
+      if (index > 0) press('Enter');
+      if (part !== '') send({ t: 'text', text: part });
+    });
+    previous = field.value;
+    // The field only exists to be compared with itself. Start afresh after Enter (a later
+    // Backspace must not "delete the line break"), and between words once it has grown long.
+    if (text.includes('\n') || (previous.length > MAX_KEYBOARD_BUFFER && /\s$/.test(previous))) reset();
+  });
+  // Backspace in an empty field changes nothing, so no input event comes; catch the key itself.
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'Backspace' && field.value === '') press('Backspace');
+  });
+  field.addEventListener('blur', reset);
+}
+
+/**
  * Wires pointer, wheel and keyboard events on the canvas to input messages.
  * @param {HTMLCanvasElement} canvas
  * @param {(message: object) => void} send delivers one message to the server

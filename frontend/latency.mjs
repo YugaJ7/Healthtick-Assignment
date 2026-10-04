@@ -2,8 +2,8 @@
 //
 // One trial: read the pixels around a point, send a touch-down at that point, and stop
 // the clock when a drawn video frame shows a change there. The point is the Back button,
-// which Android highlights as soon as it is pressed. Run it with the device on its home
-// screen in portrait. What this includes: page -> server -> device -> render -> encode
+// which Android highlights as soon as it is pressed. The finger is then slid off the
+// button before it is lifted, so no Back press happens. The device must be in portrait. What this includes: page -> server -> device -> render -> encode
 // -> server -> page -> decode -> draw. What it leaves out: the mouse or touch hardware
 // before the browser sees the event, and the monitor after the canvas is drawn.
 
@@ -15,6 +15,7 @@ const RGBA_CHANNELS = 4;
 // Centre of the Back button as a fraction of the screen (178, 1230 on a 720 x 1280 device).
 const BACK_BUTTON_X = 178 / 720;
 const BACK_BUTTON_Y = 1230 / 1280;
+const SLIDE_AWAY = 0.25; // of the screen height
 
 /**
  * @param {number[]} samples
@@ -99,19 +100,23 @@ export function createLatencyProbe({ canvas, context, send, pointerId }) {
         resolve(null);
       }, TRIAL_TIMEOUT_MS);
     });
-    send({ t: 'touch', a: 'up', id: pointerId, x, y });
+    // Lifting the finger away from the button cancels the press.
+    const away = Math.max(0, y - Math.round(canvas.height * SLIDE_AWAY));
+    send({ t: 'touch', a: 'move', id: pointerId, x, y: away });
+    send({ t: 'touch', a: 'up', id: pointerId, x, y: away });
     return result;
   }
 
   /**
    * @param {number} count
    * @param {(done: number) => void} onProgress
+   * @param {() => boolean} [shouldStop] checked before each tap
    * @returns {Promise<{ total: object | null, browser: object | null, timeouts: number, samplesMs: number[] }>}
    */
-  async function run(count, onProgress) {
+  async function run(count, onProgress, shouldStop = () => false) {
     const results = [];
     let timeouts = 0;
-    for (let i = 0; i < count; i += 1) {
+    for (let i = 0; i < count && !shouldStop(); i += 1) {
       const result = await runTrial();
       if (result) results.push(result);
       else timeouts += 1;

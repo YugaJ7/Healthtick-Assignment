@@ -77,6 +77,7 @@ function openControlSocket(port) {
 }
 
 // One scrcpy-server instance on the device `serial`, with its video and control sockets. Emits:
+//   'stage' ('streaming' once the video socket is open, 'control' once the control socket is)
 //   'event' (codec | session | packet objects from the parser)
 //   'device' (messages from the device, currently { type: 'clipboard', text })
 //   'close' (reason string), exactly once
@@ -115,9 +116,11 @@ function startScrcpySession(serial) {
 
     socket = await openVideoSocketWithRetry(port, () => isStopped);
     if (isStopped) return socket.destroy();
+    emitter.emit('stage', 'streaming');
 
     controlSocket = await openControlSocket(port);
     if (isStopped) return controlSocket.destroy();
+    emitter.emit('stage', 'control');
     // The device also talks on this socket: it reports clipboard changes.
     const deviceParser = createDeviceMessageParser();
     controlSocket.on('data', (chunk) => {

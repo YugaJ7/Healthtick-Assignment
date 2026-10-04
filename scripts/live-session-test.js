@@ -40,7 +40,7 @@ const exists = (name) => runningDevices().includes(name);
 
 // Opens one viewer. `ready` resolves when the device is up; `closed` when the socket closes.
 function open(token) {
-  const query = new URLSearchParams({ code: ACCESS_CODE });
+  const query = new URLSearchParams({ code: ACCESS_CODE, mode: 'full' });
   if (token) query.set('session', token);
   const ws = new WebSocket(`${URL_BASE}?${query}`);
   const viewer = { ws, token: null, startedAt: Date.now(), readyMs: null };

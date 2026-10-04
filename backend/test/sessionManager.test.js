@@ -111,6 +111,35 @@ test('sessions without an owner are not limited per address', (t) => {
   assert.doesNotThrow(() => manager.attach(null, () => {}));
 });
 
+test('keeps the newest start-up stage of a session and passes each one on', async (t) => {
+  const seen = [];
+  const { manager } = setup(t, {
+    createDevice: async (id, mode, onStage) => {
+      onStage('created');
+      onStage('booted');
+      return { name: `device-${id}` };
+    },
+  });
+
+  const session = manager.attach(null, () => {});
+  assert.equal(session.stage, 'booted'); // reported before anyone listened
+  session.onStage = (stage) => seen.push(stage);
+  await settle();
+
+  assert.deepEqual(seen, []);
+  assert.equal(session.stage, 'booted');
+});
+
+test('knows whether a token belongs to a running session', (t) => {
+  const { manager } = setup(t);
+  const session = manager.attach(null, () => {});
+
+  assert.equal(manager.has(session.token), true);
+  assert.equal(manager.has('0'.repeat(32)), false);
+  manager.end(session, 'ended by user');
+  assert.equal(manager.has(session.token), false);
+});
+
 test('tells the owner of the manager once when a session has ended', (t) => {
   const ended = [];
   const { manager } = setup(t, { onEnded: (session) => ended.push(session.id) });

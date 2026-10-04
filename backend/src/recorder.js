@@ -115,7 +115,10 @@ function createRecorder({ filePath, maxBytes, log, now = Date.now }) {
     return new Promise((resolve) => file.end(resolve));
   }
 
-  return { write, close };
+  /** Length of what has been recorded so far, in milliseconds. */
+  const durationMs = () => (lastTimeMs < 0 ? 0 : lastTimeMs + LAST_FRAME_MS);
+
+  return { write, close, durationMs };
 }
 
 module.exports = { createRecorder };

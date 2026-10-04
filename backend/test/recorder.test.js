@@ -46,6 +46,16 @@ test('writes a header, then one piece per frame with the time between frames', a
   ]);
 });
 
+test('knows how long the recording is', async (t) => {
+  const { recorder } = setup(t);
+  assert.equal(recorder.durationMs(), 0);
+
+  for (const event of [sessionEvent, configEvent, frame(0, true), frame(2000)]) recorder.write(event);
+  await recorder.close();
+
+  assert.equal(recorder.durationMs(), 2033);
+});
+
 test('frames before the first key frame are left out', async (t) => {
   const { recorder, timings } = setup(t);
 

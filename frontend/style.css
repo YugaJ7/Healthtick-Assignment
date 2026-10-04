@@ -1,40 +1,155 @@
+:root {
+  color-scheme: dark;
+  --bg: #16181d; --panel: #23262d; --panel-hover: #2f333b; --line: #5f6368; --text: #e8eaed; --muted: #9aa0a6;
+  --focus: #8ab4f8; --danger: #d93025; --danger-hover: #b3261e; --go: #188038; --go-hover: #146c2e;
+  --gap: 12px; --side: 220px;
+}
 html, body { height: 100%; margin: 0; }
-body { display: flex; flex-direction: column; background: #16181d; color: #e8eaed; font-family: system-ui, sans-serif; }
-header { display: flex; gap: 16px; align-items: center; padding: 8px 16px; font-size: 14px; }
-#status::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 50%; background: #9aa0a6; }
-#status[data-state="live"]::before { background: #34a853; }
-#status[data-state="reconnecting"]::before { background: #fbbc04; }
-#status[data-state="error"]::before { background: #ea4335; }
-#stats { margin-left: auto; color: #9aa0a6; font-variant-numeric: tabular-nums; }
-main { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 16px; }
-/* The canvas keeps the device's own pixel size; CSS only scales it to fit the window. */
-canvas { max-width: 100%; max-height: 100%; background: #000; touch-action: none; user-select: none; outline: none; }
-canvas:focus-visible { box-shadow: 0 0 0 2px #8ab4f8; }
-nav { display: flex; gap: 12px; justify-content: center; padding: 12px 16px; }
-form { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 8px 16px 16px; }
-form[hidden], nav[hidden], section[hidden] { display: none; }
-nav { flex-wrap: wrap; }
-section { display: flex; flex-direction: column; gap: 12px; align-items: center; padding: 8px 16px 16px; text-align: center; }
-section p { margin: 0; }
-#status[data-state="ended"]::before { background: #9aa0a6; }
-/* A Clock-only session has no Home or Recents; the server ignores them anyway. */
-body[data-mode="restricted"] button[data-key="Home"], body[data-mode="restricted"] button[data-key="AppSwitch"] { display: none; }
-#tools { padding: 0 16px 12px; font-size: 14px; text-align: center; }
-.tool { display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
-#tools p { margin: 8px 0 0; min-height: 1.2em; color: #9aa0a6; }
-textarea { width: 220px; max-width: 100%; min-height: 40px; box-sizing: border-box; padding: 8px 12px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; resize: vertical; }
-textarea:focus-visible, summary:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
-details { margin-top: 8px; color: #9aa0a6; }
-summary { cursor: pointer; }
-pre { max-height: 160px; overflow: auto; text-align: left; white-space: pre-wrap; }
-input { min-height: 40px; padding: 0 12px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; }
-input:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
-button { min-width: 88px; min-height: 40px; padding: 8px 16px; border: 1px solid #5f6368; border-radius: 8px; background: #23262d; color: inherit; font: inherit; cursor: pointer; }
-button:hover { background: #2f333b; }
-button:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
-video { max-width: 100%; max-height: 50vh; background: #000; }
-a { color: #8ab4f8; }
-a:focus-visible { outline: 2px solid #8ab4f8; outline-offset: 2px; }
-ul { margin: 8px 0 0; padding: 0; list-style: none; }
-li { margin: 4px 0; }
-li a { margin-left: 12px; }
+body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; overflow: hidden; }
+p, h2 { margin: 0; }
+h2 { font-size: 16px; font-weight: 600; }
+[hidden] { display: none !important; }
+
+button, .button {
+  box-sizing: border-box; min-height: 40px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: inherit; font: inherit; text-align: center; text-decoration: none; cursor: pointer;
+}
+button:hover, .button:hover { background: var(--panel-hover); }
+button:focus-visible, .button:focus-visible, canvas:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+button:disabled, .button[aria-disabled="true"], a[aria-disabled="true"] { opacity: 0.55; cursor: default; pointer-events: none; }
+button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.danger:hover { background: var(--danger-hover); }
+button.go { background: var(--go); border-color: var(--go); color: #fff; }
+button.go:hover { background: var(--go-hover); }
+input { min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: inherit; font: inherit; }
+a { color: var(--focus); }
+.caption { color: var(--muted); font-size: 13px; line-height: 1.4; }
+
+/* ---- loading and error: one full-screen layer ---- */
+#loading {
+  position: fixed; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--gap); padding: 24px; background: var(--bg); text-align: center; opacity: 0; visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s;
+}
+body[data-state="loading"] #loading, body[data-state="error"] #loading { opacity: 1; visibility: visible; }
+#percent { font-size: 64px; font-weight: 300; font-variant-numeric: tabular-nums; }
+#bar { width: min(360px, 80vw); height: 6px; border-radius: 3px; background: var(--panel); overflow: hidden; }
+#bar-fill { width: 0; height: 100%; background: var(--focus); transition: width 0.3s ease; }
+#loading-status { color: var(--muted); min-height: 1.4em; }
+#error-text { max-width: 480px; line-height: 1.4; }
+#code-form { display: flex; gap: var(--gap); align-items: center; flex-wrap: wrap; justify-content: center; }
+#retry, #error-text { display: none; }
+body[data-state="error"] #retry, body[data-state="error"] #error-text { display: block; }
+body[data-state="error"] #percent, body[data-state="error"] #bar, body[data-state="error"] #loading-status { display: none; }
+
+/* ---- the session: device in the middle, a column on each side ---- */
+#session { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); height: 100%; }
+#stage { position: relative; display: flex; align-items: center; justify-content: center; height: 100vh; }
+/* The canvas keeps the device's own pixel size; the page sets its size on screen (app.mjs, fitStage). */
+canvas, #recording { display: block; background: #000; }
+canvas { touch-action: none; user-select: none; outline: none; }
+#stage-note {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80%; padding: 8px 16px;
+  border-radius: 8px; background: rgba(22, 24, 29, 0.85); text-align: center;
+}
+#stage-note:empty { display: none; }
+#left { padding: var(--gap); }
+/* Controls in the corner; the latency results sit to their left, next to the device. */
+#right { display: flex; flex-flow: row-reverse wrap; align-content: flex-start; justify-content: space-between; gap: var(--gap); padding: var(--gap); min-width: 0; overflow-y: auto; }
+#controls { display: flex; flex-direction: column; gap: var(--gap); width: calc(var(--side) - 2 * var(--gap)); }
+#stats { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+#mode-label { color: var(--muted); text-align: right; }
+#notice { color: var(--muted); min-height: 1.4em; line-height: 1.4; }
+#latency-run.running::before {
+  content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; vertical-align: -1px;
+  border: 2px solid var(--muted); border-top-color: var(--text); border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #latency-run.running::before { animation: none; }
+  #loading, #bar-fill { transition: none; }
+}
+
+/* ---- latency results, beside the device ---- */
+#latency-panel { width: min(320px, 100%); box-sizing: border-box; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+#latency-panel header, #recordings header { display: flex; align-items: center; justify-content: space-between; gap: var(--gap); margin-bottom: var(--gap); }
+#latency-body { display: flex; flex-direction: column; gap: var(--gap); }
+.figures { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; margin: 0; }
+.figures dt { color: var(--muted); }
+.figures dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.chart { width: 100%; height: auto; }
+.chart .bar { fill: var(--focus); }
+.chart .median-line { stroke: var(--text); stroke-width: 1; stroke-dasharray: 4 3; }
+
+/* ---- previous recordings: a drawer from the left ---- */
+#recordings {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 2; width: min(360px, 100vw); box-sizing: border-box; padding: 16px;
+  display: flex; flex-direction: column; gap: var(--gap); background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto;
+}
+#recordings-player { width: 100%; max-height: 45vh; background: #000; }
+#recording-list { display: flex; flex-direction: column; gap: var(--gap); margin: 0; padding: 0; list-style: none; }
+#recording-list li { display: flex; flex-direction: column; gap: 4px; padding-bottom: var(--gap); border-bottom: 1px solid var(--line); }
+#recording-list li span { color: var(--muted); }
+#recording-list li span:last-child { display: flex; gap: var(--gap); align-items: center; margin-top: 4px; }
+
+/* ---- what each state shows ---- */
+body[data-state="ended"] canvas { display: none; }
+body[data-state="ended"] #latency-run, body:not([data-state="ended"]) #download { display: none; }
+
+/* ---- on-screen keyboard (touch devices) ----
+   The field is real but invisible: focusing it makes the phone show its keyboard, and
+   what is typed into it is sent to the device. 16px stops iOS from zooming in on focus. */
+#keyboard { position: fixed; left: 0; bottom: 0; width: 1px; height: 1px; padding: 0; border: 0; opacity: 0; font-size: 16px; resize: none; }
+#keyboard-open { display: none; }
+@media (pointer: coarse) {
+  #keyboard-open { display: block; }
+  body[data-state="ended"] #keyboard-open, body[data-state="loading"] #keyboard-open, body[data-state="error"] #keyboard-open { display: none; }
+}
+@media (pointer: coarse) and (max-width: 760px) {
+  body #latency-run { grid-column: 1 / 3; } /* "body" so this wins over the full-row rule further down */
+}
+
+/* ---- phones and narrow windows ----
+   A slim bar above the device, the device filling the space between, one action below.
+   The three columns of the wide layout are dissolved (display: contents) so their
+   children can be placed in this grid without changing the page's structure. */
+@media (max-width: 760px) {
+  body { overflow: hidden; }
+  #session {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "recordings stats   primary"
+      "recordings mode    primary"
+      "stage      stage   stage"
+      "action     action  keyboard"
+      "notice     notice  notice";
+    column-gap: 8px;
+    height: 100dvh;
+    box-sizing: border-box;
+    padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  }
+  #left, #right, #controls { display: contents; }
+  /* The bar is short on room: the button reads "Recordings" here. */
+  #recordings-open { grid-area: recordings; align-self: center; text-transform: capitalize; }
+  .wide-only { display: none; }
+  #stats { grid-area: stats; align-self: end; text-align: center; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #mode-label { grid-area: mode; align-self: start; text-align: center; font-size: 13px; }
+  #primary { grid-area: primary; align-self: center; }
+  #stage { grid-area: stage; height: auto; min-height: 0; margin: 8px 0; overflow: hidden; }
+  /* The action takes the whole row, unless the Keyboard button is there to share it. */
+  #latency-run, #download { grid-area: action; grid-column: 1 / -1; }
+  #keyboard-open { grid-area: keyboard; }
+  body[data-state="ended"] #stats { white-space: normal; }
+  #notice { grid-area: notice; min-height: 0; margin-top: 4px; text-align: center; font-size: 13px; }
+  #notice:empty { display: none; }
+  /* Fingers need bigger targets than a mouse pointer. */
+  button, .button { min-height: 44px; padding: 8px 12px; }
+
+  /* Nothing fits beside the device, so results and recordings open as full-screen sheets. */
+  #latency-panel, #recordings {
+    position: fixed; inset: 0; z-index: 2; width: auto; border: 0; border-radius: 0; overflow-y: auto;
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  }
+  #percent { font-size: 48px; }
+}

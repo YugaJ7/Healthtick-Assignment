@@ -10,19 +10,19 @@ No sign-in and nothing to install. Use a current Chrome or Edge on a computer (s
 
 | Feature | How to try it |
 |---|---|
-| Live screen | Open the link. The status goes from "Starting your Android device" to "Live" in about 9 seconds. |
+| Live screen | Open the link. A loading screen counts from 0 to 100 % as the server creates and boots your device (about 10 seconds); each step of the number is a real event on the server. The device then fills the height of the window. |
 | Tap, long-press, swipe | Use the mouse or a finger on the screen image. Drags keep working if the pointer leaves the image. |
 | Scroll | Mouse wheel over the screen image. |
 | Type | Click the screen image, then type. Enter, Backspace, Delete, Tab and the arrow keys work. |
-| Back, Home, Recents | Buttons under the screen. Right-click and Esc also send Back. |
-| Any window size, rotation | Resize the window or rotate an app; touches keep landing where you point. |
-| Clipboard, computer to device | Tap a text field on the device, then press **Paste into device**, or click the screen and press Ctrl+V. |
-| Clipboard, device to computer | Select text on the device and copy it (or press Ctrl+C with the screen focused). It appears under "Copied on the device"; press **Copy** if the browser did not copy it by itself. |
-| Your own device | Open the link in a second browser window: it gets a different device. Files, settings and apps are not shared. |
-| One app only | Press **Switch to Clock only** (or open the link with `?mode=restricted`). You get a new device locked to the Clock app; see [Clock-only mode](#clock-only-mode). |
+| Back | The device's own navigation bar at the bottom of the screen. Right-click and Esc also send Back. |
+| Any window size | Resize the window; touches keep landing where you point. |
+| Clipboard, computer to device | Tap a text field on the device (for example an alarm label), click the screen and press Ctrl+V. |
+| Clipboard, device to computer | Select text on the device and copy it, or press Ctrl+C with the screen focused. A line under the buttons says that it reached your computer's clipboard, or that the browser blocked it. |
+| One app only | Every session is locked to the Clock app; "Clock app only" is shown under the frame rate. See [Clock-only mode](#clock-only-mode). The full device is still there for testing: open the link with `?mode=full`. |
+| Your own device | Open the link in a second browser window: it gets a different device. Files, settings and apps are not shared (easiest to see with `?mode=full`). |
 | End a session | **End session** deletes the device at once. Closing the tab deletes it after 30 seconds. Five minutes without input also ends it. |
-| Session recording | Every session is recorded. After **End session** the recording plays under the message, with a download link. **Recordings of your sessions** lists this browser's sessions of the last 24 hours, each with Watch and Download. |
-| Latency test | Open **Latency test** and press **Run 40 taps** with the device on its home screen. |
+| Session recording | Every session is recorded. After **End session** the recording plays where the device was, and **Download recording** appears under **Start a new session**. **Previous recordings** (top left) lists this browser's sessions of the last 24 hours with date, length and session id, each with Play and Download. |
+| Latency check | Press **Run latency check**. It makes 40 taps (about 50 seconds) and shows the median, 95th percentile, fastest, slowest and a chart of every tap beside the device. |
 
 ## Hosting and limits
 
@@ -69,7 +69,7 @@ Each session's video is saved on the server as one MP4 file, automatically, from
 
 ## Clock-only mode
 
-A session can be started in a restricted mode in which the device runs the Clock app and nothing else. The mode is chosen when the session is created and is stored on the server; reconnecting cannot change it.
+By default every session is restricted: the device runs the Clock app and nothing else. (`DEFAULT_MODE=full` in the settings file, or `?mode=full` in the link, gives the whole device.) The mode is chosen when the session is created and is stored on the server; reconnecting cannot change it.
 
 **Why Clock:** it comes with the Android image, works without an account or network, has real things to do (alarms, timers, a stopwatch, a text field for alarm labels), and has only one link out to another app.
 
@@ -128,7 +128,7 @@ Settings live in `/etc/android-web.env` (`MAX_SESSIONS`, `MAX_SESSIONS_PER_ADDRE
 cd backend && npm install && npm test
 ```
 
-95 unit tests: the scrcpy video and device-message parsers, the control-message encoder (checked against scrcpy's own test vectors), position mapping at several window sizes, session rules (limit, limit per address, grace time, idle timeout, fixed mode), the restricted-mode input list, the response headers, the MP4 writer and recorder, and the latency statistics. They need no device.
+112 unit tests: the scrcpy video and device-message parsers, the control-message encoder (checked against scrcpy's own test vectors), position mapping at several window sizes, session rules (limit, limit per address, grace time, idle timeout, fixed mode), the restricted-mode input list, the response headers, the MP4 writer and recorder, the start-up stages, the page's state machine, and the latency statistics. They need no device.
 
 On the server, live tests open real sessions. Run them when nobody else is using the site:
 
@@ -158,8 +158,8 @@ A security review of the finished system found a path from an anonymous visitor 
 
 ## Measured
 
-- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps. Method, conditions and all samples are in [docs/LATENCY.md](docs/LATENCY.md).
-- **Device start:** 8.5 s from request to ready with the CPU limit and fences in place (one measurement); before them it was 6.5 s for a new device and about 7 s from "Start a new session" to live video.
+- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps (the documented run, on the full device). Two later runs in Clock-only mode with the redesigned page gave medians of 150 and 154 ms. Method, conditions and all samples are in [docs/LATENCY.md](docs/LATENCY.md).
+- **Device start:** about 10 s from opening the link to live video in Clock-only mode (stages seen in the page: 5 % at 0.3 s, 20 % at 0.5 s, 35 % at 1.8 s, 55 % at 6.3 s, 75 % at 7.5 s, 80 % at 8.9 s, 100 % at 10.2 s). Earlier: 8.5 s from request to ready with the CPU limit and fences in place (one measurement); before them it was 6.5 s for a new device and about 7 s from "Start a new session" to live video.
 - **Memory:** about 600 MB per device.
 - **Reboot:** the site answered again 25 s after a server reboot, with no one logging in.
 
@@ -171,11 +171,11 @@ The page needs WebCodecs, which browsers only provide on HTTPS (or localhost).
 
 - **Tested:** Chrome 154 on Windows 11.
 - **Not tested:** Firefox, Safari, Edge, and any phone browser. They may work.
-- **Known gap:** on a phone or tablet you can touch the device, but you cannot type, because the page does not open the on-screen keyboard.
+- **Phone layout:** on a screen up to 760 px wide the page becomes a slim bar on top (Recordings, frame rate, End session), the device in the middle, and one action below; latency results and recordings open as full-screen sheets. A **Keyboard** button on touch devices opens the phone's keyboard and sends what you type. This was checked in Chrome's phone emulation (390 x 844, touch) on the live link, not on a real phone.
 
 ## Known limits
 
-- Input from a real touch screen and multi-touch gestures have not been tested.
+- Input from a real touch screen, the phone keyboard on a real phone, and multi-touch gestures have not been tested.
 - Three sessions at once have been started but not used actively at the same time.
 - The mouse wheel lands one pixel off the pointer position.
 - After a backend crash, sessions are not restored: you get a new device.

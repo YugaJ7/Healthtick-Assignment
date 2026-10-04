@@ -12,7 +12,8 @@ const { isAccessCodeValid, isOriginAllowed, visitorAddress, securityHeaders } = 
 const { ensureNetwork, removeOrphans, createDevice, removeDevice } = require('./deviceManager');
 const { createSessionManager, BusyError, LimitError } = require('./sessionManager');
 const { isAllowedWhenRestricted, enforceRestriction } = require('./restriction');
-const { startRecording, serveRecording, cleanUpRecordings } = require('./recordings');
+const { recorderFor, finishRecording, serveRecording, serveRecordingInfo, cleanUpRecordings } = require('./recordings');
+const { progressMessage } = require('./progress');
 
 const STREAM_PATH = '/stream';
 const PACKET_HEADER_BYTES = 9;
@@ -50,17 +51,10 @@ const STATIC_FILES = new Map([
   ['/input.mjs', { file: 'input.mjs', type: 'text/javascript; charset=utf-8' }],
   ['/pointerMap.mjs', { file: 'pointerMap.mjs', type: 'text/javascript; charset=utf-8' }],
   ['/latency.mjs', { file: 'latency.mjs', type: 'text/javascript; charset=utf-8' }],
+  ['/state.mjs', { file: 'state.mjs', type: 'text/javascript; charset=utf-8' }],
+  ['/latencyPanel.mjs', { file: 'latencyPanel.mjs', type: 'text/javascript; charset=utf-8' }],
+  ['/recordingsPanel.mjs', { file: 'recordingsPanel.mjs', type: 'text/javascript; charset=utf-8' }],
 ]);
-
-// One recording per session, kept open across reconnects and closed when the session ends.
-const recorders = new Map(); // session id -> recorder
-
-function endRecording(session) {
-  const recorder = recorders.get(session.id);
-  if (!recorder) return;
-  recorders.delete(session.id);
-  recorder.close();
-}
 
 const sessions = createSessionManager({
   createDevice,
@@ -70,7 +64,8 @@ const sessions = createSessionManager({
   graceMs: config.graceMs,
   idleMs: config.idleMs,
   log: logger.info,
-  onEnded: endRecording,
+  // One recording per session: kept open across reconnects, closed when the session ends.
+  onEnded: (session) => finishRecording(session.id),
 });
 
 function handleHttp(req, res) {
@@ -80,6 +75,7 @@ function handleHttp(req, res) {
     return res.end(JSON.stringify({ ok: true, sessions: sessions.count(), maxSessions: config.maxSessions }));
   }
   if (req.method === 'GET' && pathname === '/recording') return serveRecording(req, res, searchParams, securityHeaders(req.headers.host));
+  if (req.method === 'GET' && pathname === '/recording/info') return serveRecordingInfo(res, searchParams, securityHeaders(req.headers.host));
   const entry = req.method === 'GET' ? STATIC_FILES.get(pathname) : undefined;
   if (!entry) {
     res.writeHead(404, { 'content-type': 'text/plain' });
@@ -181,8 +177,7 @@ function startStream(ws, session, device) {
   if (session.mode === 'restricted') stream.watchdog = startRestrictionWatchdog(session, device);
   logger.info(`session ${session.id} streaming, scrcpy ${stream.scrcpy.scid}`);
 
-  if (!recorders.has(session.id)) recorders.set(session.id, startRecording(session.id));
-  const recorder = recorders.get(session.id);
+  const recorder = recorderFor(session.id, session.mode);
 
   stream.scrcpy.on('event', (event) => {
     recorder.write(event);
@@ -194,6 +189,7 @@ function startStream(ws, session, device) {
     if (ws.bufferedAmount > MAX_BUFFERED_BYTES) return ws.close(WS_CLOSE_TRY_AGAIN, 'viewer too slow');
     ws.send(encodePacket(event));
   });
+  stream.scrcpy.on('stage', (stage) => sendJson(ws, progressMessage(stage)));
   stream.scrcpy.on('device', (message) => {
     if (message.type === 'clipboard') sendJson(ws, { type: 'clipboard', text: message.text.slice(0, MAX_CLIPBOARD_CHARS) });
   });
@@ -209,13 +205,21 @@ function handleViewer(ws, req) {
   if (!isOriginAllowed(req.headers.origin, req.headers.host)) return ws.close(WS_CLOSE_POLICY, 'origin not allowed');
   if (!isAccessCodeValid(config.accessCode, params.get('code') ?? '')) return ws.close(WS_CLOSE_BAD_CODE, 'access code required');
 
+  // A page that was already showing a device reconnects with "resume=only": if that
+  // session is gone (idle, or the server restarted), it must be told so, not handed a
+  // different device as if nothing had happened.
+  if (params.get('resume') === 'only' && !sessions.has(params.get('session') ?? '')) {
+    return ws.close(WS_CLOSE_SESSION_ENDED, 'the session has expired');
+  }
+
   const onSessionEnd = (reason) => {
     if (ws.readyState === ws.OPEN) ws.close(WS_CLOSE_SESSION_ENDED, reason.slice(0, MAX_REASON_LENGTH));
   };
   let session;
   try {
     // The mode only matters for a new session; an existing one keeps its own.
-    const mode = params.get('mode') === 'restricted' ? 'restricted' : 'full';
+    const asked = params.get('mode');
+    const mode = asked === 'full' || asked === 'restricted' ? asked : config.defaultMode;
     session = sessions.attach(params.get('session'), onSessionEnd, mode, visitorAddress(req.headers['x-forwarded-for']));
   } catch (err) {
     if (err instanceof BusyError) return ws.close(WS_CLOSE_BUSY, 'all devices are in use');
@@ -226,6 +230,10 @@ function handleViewer(ws, req) {
 
   let stream = null;
   sendJson(ws, { type: 'device', state: 'starting', token: session.token, mode: session.mode });
+  // Where the device's start-up stands now, then each further stage as it happens.
+  const onStage = (stage) => sendJson(ws, progressMessage(stage));
+  onStage(session.stage);
+  session.onStage = onStage;
   ws.on('message', createInputHandler(ws, session, () => stream));
   ws.on('error', (err) => logger.info(`session ${session.id} viewer socket error: ${err.message}`));
   ws.on('close', () => {
@@ -233,6 +241,7 @@ function handleViewer(ws, req) {
       clearInterval(stream.watchdog);
       stream.scrcpy.stop('viewer disconnected');
     }
+    if (session.onStage === onStage) session.onStage = null;
     sessions.detach(session, onSessionEnd);
   });
 
@@ -256,7 +265,7 @@ wss.on('connection', (ws, req) => {
 
 // A viewer whose network vanished never sends a close. Ping each one; a viewer that did
 // not answer the previous ping is dropped, which starts its session's grace timer.
-const recordingCleanup = setInterval(() => cleanUpRecordings((id) => recorders.has(id)), RECORDING_CLEANUP_MS);
+const recordingCleanup = setInterval(cleanUpRecordings, RECORDING_CLEANUP_MS);
 recordingCleanup.unref();
 
 const heartbeat = setInterval(() => {
@@ -284,7 +293,7 @@ async function main() {
   const orphans = await removeOrphans();
   if (orphans > 0) logger.info(`removed ${orphans} leftover device(s) from an earlier run`);
   await ensureNetwork();
-  cleanUpRecordings(() => false);
+  cleanUpRecordings();
   server.listen(config.port, config.host, () => {
     logger.info(`listening on http://${config.host}:${config.port}, up to ${config.maxSessions} devices, ${config.maxSessionsPerAddress} per visitor address`);
   });

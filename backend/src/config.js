@@ -27,6 +27,8 @@ const config = Object.freeze({
   idleMs: intFromEnv('SESSION_IDLE_MS', 300_000),
   // Shared code a viewer must send to get a stream. Empty means no check (local development).
   accessCode: process.env.ACCESS_CODE || '',
+  // What a new session gets when the link does not say: 'restricted' is the Clock app only.
+  defaultMode: process.env.DEFAULT_MODE === 'full' ? 'full' : 'restricted',
   frontendDir: path.resolve(__dirname, '..', '..', 'frontend'),
   device: Object.freeze({
     image: process.env.DEVICE_IMAGE || 'redroid/redroid:12.0.0_64only-latest',

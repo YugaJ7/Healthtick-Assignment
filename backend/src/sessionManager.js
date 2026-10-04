@@ -18,7 +18,7 @@ class LimitError extends Error {}
 
 /**
  * @param {object} options
- * @param {(id: string, mode: string) => Promise<object>} options.createDevice
+ * @param {(id: string, mode: string, onStage: (stage: string) => void) => Promise<object>} options.createDevice
  * @param {(device: object) => Promise<void>} options.removeDevice
  * @param {number} options.maxSessions
  * @param {number} [options.maxPerOwner] most sessions one owner (visitor address) may hold
@@ -57,8 +57,12 @@ function createSessionManager({ createDevice, removeDevice, maxSessions, maxPerO
     const token = crypto.randomBytes(TOKEN_BYTES).toString('hex');
     // The id appears in logs and container names; the token is the secret and never does.
     const id = sessionIdOf(token);
-    const session = { token, id, mode, owner, isEnded: false, isAttached: false, onEnd: null, graceTimer: null, idleTimer: null, ready: null };
-    session.ready = createDevice(id, mode);
+    const session = { token, id, mode, owner, isEnded: false, isAttached: false, onEnd: null, graceTimer: null, idleTimer: null, ready: null, stage: 'requested', onStage: null };
+    // The newest stage is kept, so a viewer that attaches later still learns where things are.
+    session.ready = createDevice(id, mode, (stage) => {
+      session.stage = stage;
+      if (session.onStage) session.onStage(stage);
+    });
     // The detail goes to the log; the visitor gets a plain reason.
     session.ready.catch((err) => {
       log(`session ${id} device failed: ${err.message}`);
@@ -109,7 +113,7 @@ function createSessionManager({ createDevice, removeDevice, maxSessions, maxPerO
     for (const session of [...sessions.values()]) end(session, reason);
   }
 
-  return { attach, detach, touch, end, endAll, count: () => sessions.size };
+  return { attach, detach, touch, end, endAll, count: () => sessions.size, has: (token) => sessions.has(token) };
 }
 
 module.exports = { createSessionManager, sessionIdOf, BusyError, LimitError };

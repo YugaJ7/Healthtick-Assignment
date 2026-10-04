@@ -6,51 +6,59 @@
   <title>Android in the browser</title>
   <link rel="stylesheet" href="/style.css">
 </head>
-<body>
-  <header>
-    <span id="status" data-state="connecting" role="status">Starting</span>
-    <span id="stats"></span>
-  </header>
-  <form id="code-form" hidden>
-    <label for="code-input">Access code</label>
-    <input id="code-input" type="password" autocomplete="off" required>
-    <button type="submit">Connect</button>
-  </form>
-  <main>
-    <canvas id="screen" width="720" height="1280" tabindex="0" aria-label="Android device screen. Click to control it; type to send keys."></canvas>
-  </main>
-  <nav id="device-buttons" aria-label="Device buttons">
-    <button type="button" data-key="Back">Back</button>
-    <button type="button" data-key="Home">Home</button>
-    <button type="button" data-key="AppSwitch">Recents</button>
-    <button type="button" id="switch-mode">Switch to Clock only</button>
-    <button type="button" id="end-session">End session</button>
-  </nav>
-  <div id="tools">
-    <div class="tool">
-      <button type="button" id="paste">Paste into device</button>
-      <label for="device-clipboard">Copied on the device</label>
-      <textarea id="device-clipboard" rows="1" readonly></textarea>
-      <button type="button" id="copy-device">Copy</button>
-    </div>
-    <p id="clipboard-note" role="status"></p>
-    <details>
-      <summary>Recordings of your sessions</summary>
-      <p>Every session is recorded on the server. Only this browser can open its recordings; they are deleted after 24 hours.</p>
-      <ul id="recording-list"></ul>
-    </details>
-    <details>
-      <summary>Latency test</summary>
-      <button type="button" id="latency-run">Run 40 taps</button>
-      <pre id="latency-result" role="status"></pre>
-    </details>
+<body data-state="loading">
+  <div id="loading">
+    <p id="percent" aria-hidden="true">0%</p>
+    <div id="bar" role="progressbar" aria-label="Starting the device" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="bar-fill"></div></div>
+    <p id="loading-status" role="status">Connecting</p>
+    <p id="error-text" role="alert"></p>
+    <form id="code-form" hidden>
+      <label for="code-input">Access code</label>
+      <input id="code-input" type="password" autocomplete="off" required>
+      <button type="submit">Connect</button>
+    </form>
+    <button type="button" id="retry">Retry</button>
   </div>
-  <section id="ended" hidden>
-    <p id="ended-reason"></p>
-    <video id="recording" controls hidden></video>
-    <a id="recording-download" hidden>Download the recording of this session</a>
-    <button type="button" id="new-session">Start a new session</button>
-  </section>
+
+  <div id="session">
+    <div id="left">
+      <button type="button" id="recordings-open" aria-expanded="false" aria-controls="recordings" aria-label="Previous recordings"><span class="wide-only">Previous </span>recordings</button>
+    </div>
+    <main id="stage">
+      <canvas id="screen" width="720" height="1280" tabindex="0" aria-label="Android device screen. Click to control it; type to send keys; Ctrl+C and Ctrl+V copy and paste."></canvas>
+      <video id="recording" controls hidden aria-label="Recording of this session"></video>
+      <p id="stage-note" role="status"></p>
+    </main>
+    <div id="right">
+      <div id="controls">
+        <p id="stats"></p>
+        <p id="mode-label"></p>
+        <button type="button" id="primary" class="danger">End session</button>
+        <button type="button" id="latency-run">Run latency check</button>
+        <a id="download" class="button">Download recording</a>
+        <button type="button" id="keyboard-open">Keyboard</button>
+        <p id="notice" role="status"></p>
+      </div>
+      <section id="latency-panel" aria-labelledby="latency-title" hidden>
+        <header>
+          <h2 id="latency-title">Latency</h2>
+          <button type="button" id="latency-close" aria-label="Close latency results">Close</button>
+        </header>
+        <div id="latency-body"></div>
+      </section>
+    </div>
+  </div>
+
+  <aside id="recordings" aria-labelledby="recordings-title" hidden>
+    <header>
+      <h2 id="recordings-title">Previous recordings</h2>
+      <button type="button" id="recordings-close" aria-label="Close previous recordings">Close</button>
+    </header>
+    <p class="caption">Sessions started in this browser in the last 24 hours. Only this browser can open them.</p>
+    <video id="recordings-player" controls hidden aria-label="Chosen recording"></video>
+    <ul id="recording-list"></ul>
+  </aside>
+  <textarea id="keyboard" aria-label="Typing here sends the text to the device" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
   <script type="module" src="/app.mjs"></script>
 </body>
 </html>

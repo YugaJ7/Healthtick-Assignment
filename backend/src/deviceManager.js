@@ -55,13 +55,33 @@ async function removeOrphans() {
   return list.length;
 }
 
-async function waitForBoot(serial, deadline) {
+const BOOT_PROBE = 'echo completed=$(getprop sys.boot_completed); echo server=$(getprop sys.system_server.start_count)';
+
+// Polls the device until Android says it has booted. On the way it reports the two
+// things that can be seen from outside: the device answers ('reachable'), and Android's
+// system server has started ('booting'). (This image shows no boot animation to watch.)
+async function waitForBoot(name, serial, deadline, onStage) {
+  let hasReportedBooting = false;
+  let hasReportedReachable = false;
   while (Date.now() < deadline) {
     try {
       await adbConnect(serial);
-      if ((await adb(serial, ['shell', 'getprop', 'sys.boot_completed'])) === '1') return;
+      const state = await adb(serial, ['shell', BOOT_PROBE]);
+      if (state.includes('completed=1')) return;
+      if (!hasReportedReachable) {
+        hasReportedReachable = true;
+        onStage('reachable');
+      }
+      if (!hasReportedBooting && /server=[1-9]/.test(state)) {
+        hasReportedBooting = true;
+        onStage('booting');
+      }
     } catch {
       // Not reachable yet: adbd inside the container starts a moment after the container does.
+      // A container that has stopped or vanished will never answer; say so at once
+      // instead of waiting for the boot timeout.
+      const isRunning = await docker(['inspect', '-f', '{{.State.Running}}', name]).catch(() => 'gone');
+      if (isRunning !== 'true') throw new Error(`device container is not running (${isRunning})`);
     }
     await sleep(BOOT_POLL_MS);
   }
@@ -72,9 +92,10 @@ async function waitForBoot(serial, deadline) {
  * Creates and boots one device. On any failure the container is removed again.
  * @param {string} id short identifier used in the container name
  * @param {'full' | 'restricted'} mode a restricted device is locked to one app before it is handed out
+ * @param {(stage: string) => void} [onStage] told each stage reached (see progress.js)
  * @returns {Promise<{ name: string, serial: string }>}
  */
-async function createDevice(id, mode) {
+async function createDevice(id, mode, onStage = () => {}) {
   const name = `${NAME_PREFIX}${id}`;
   const { image, network, memory, cpus, width, height, fps, bootTimeoutMs } = config.device;
   try {
@@ -86,14 +107,17 @@ async function createDevice(id, mode) {
       'androidboot.redroid_gpu_mode=guest',
       `androidboot.redroid_width=${width}`, `androidboot.redroid_height=${height}`, `androidboot.redroid_fps=${fps}`,
     ]);
+    onStage('created');
     const mapping = await docker(['port', name, ADB_PORT_IN_CONTAINER]);
     const port = Number(mapping.split('\n')[0].split(':').pop());
     if (!Number.isInteger(port) || port <= 0) throw new Error(`unexpected port mapping "${mapping}"`);
     const serial = `127.0.0.1:${port}`;
-    await waitForBoot(serial, Date.now() + bootTimeoutMs);
+    await waitForBoot(name, serial, Date.now() + bootTimeoutMs, onStage);
+    onStage('booted');
     await hardenDevice((args) => docker(['exec', name, ...args]));
     await adb(serial, ['push', config.scrcpy.localJar, config.scrcpy.deviceJar]);
     if (mode === 'restricted') await applyRestriction(serial);
+    onStage('secured');
     return { name, serial };
   } catch (err) {
     await removeDevice({ name, serial: null });

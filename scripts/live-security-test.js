@@ -49,7 +49,7 @@ function canConnect(name, host, port) {
 }
 
 function open() {
-  const ws = new WebSocket(`${URL_BASE}?${new URLSearchParams({ code: ACCESS_CODE })}`);
+  const ws = new WebSocket(`${URL_BASE}?${new URLSearchParams({ code: ACCESS_CODE, mode: 'full' })}`);
   const viewer = { ws, token: null, gotVideo: false };
   viewer.closed = new Promise((resolve) => ws.on('close', (code, reason) => resolve({ code, reason: reason.toString() })));
   viewer.ready = new Promise((resolve, reject) => {
