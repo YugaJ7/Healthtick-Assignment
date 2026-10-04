@@ -16,10 +16,6 @@ const MAX_CONTROL_BACKLOG_BYTES = 64 * 1024;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function pushScrcpyServer() {
-  await adb(['push', config.scrcpy.localJar, config.scrcpy.deviceJar]);
-}
-
 function serverCommand(scid) {
   const { deviceJar, version, maxSize, maxFps, bitRate } = config.scrcpy;
   return [
@@ -79,10 +75,10 @@ function openControlSocket(port) {
   });
 }
 
-// One scrcpy-server instance with its video and control sockets. Emits:
+// One scrcpy-server instance on the device `serial`, with its video and control sockets. Emits:
 //   'event' (codec | session | packet objects from the parser)
 //   'close' (reason string), exactly once
-function startScrcpySession() {
+function startScrcpySession(serial) {
   const emitter = new EventEmitter();
   const scid = crypto.randomInt(SCID_LIMIT).toString(16).padStart(8, '0');
   let isStopped = false;
@@ -98,17 +94,17 @@ function startScrcpySession() {
     if (controlSocket) controlSocket.destroy();
     if (serverProcess) serverProcess.kill();
     if (port !== null) {
-      adb(['forward', '--remove', `tcp:${port}`]).catch((err) => logger.error(`[scrcpy ${scid}] ${err.message}`));
+      adb(serial, ['forward', '--remove', `tcp:${port}`]).catch((err) => logger.error(`[scrcpy ${scid}] ${err.message}`));
     }
     emitter.emit('close', reason);
   }
 
   async function run() {
-    port = Number(await adb(['forward', 'tcp:0', `localabstract:scrcpy_${scid}`]));
+    port = Number(await adb(serial, ['forward', 'tcp:0', `localabstract:scrcpy_${scid}`]));
     if (!Number.isInteger(port) || port <= 0) throw new Error('adb forward did not return a port');
-    if (isStopped) return adb(['forward', '--remove', `tcp:${port}`]);
+    if (isStopped) return adb(serial, ['forward', '--remove', `tcp:${port}`]);
 
-    serverProcess = adbShellSpawn(serverCommand(scid));
+    serverProcess = adbShellSpawn(serial, serverCommand(scid));
     const logLine = (data) => logger.info(`[scrcpy ${scid}] ${data.toString().trim()}`);
     serverProcess.stdout.on('data', logLine);
     serverProcess.stderr.on('data', logLine);
@@ -151,4 +147,4 @@ function startScrcpySession() {
   return { on: emitter.on.bind(emitter), stop, sendControl, scid };
 }
 
-module.exports = { startScrcpySession, pushScrcpyServer };
+module.exports = { startScrcpySession };

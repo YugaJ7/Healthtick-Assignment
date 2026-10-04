@@ -130,3 +130,48 @@ Other checks:
 - A tap on the exact bottom-left corner also produces a BACK key event from the navigation bar. That is the device's behaviour, not a mapping error.
 - `user_rotation 1` has no effect while the launcher is in front (it is portrait only); it works with Settings in front.
 - After a stop/start of the instance: `modprobe binder_linux ...`, `docker start spike-redroid`, start the backend. Still manual.
+
+## Deployment results, Sun 4 Oct ~14:00 IST
+
+Server: m7i-flex.large, Mumbai, Elastic IP 43.205.158.181, host name `43-205-158-181.sslip.io` (free address-based DNS; the user has no domain).
+
+| What | Result |
+|---|---|
+| `infra/setup.sh` first run on the existing server | exit 0, no warnings; `linux-modules-extra-aws` installed |
+| HTTPS | certificate issued by Caddy for the sslip.io name (TLS-ALPN challenge); `curl` verifies it; HTTP redirects to HTTPS (308) |
+| Public page without a code | shows "Access code needed" and the form |
+| Wrong code | refused, form stays |
+| Right code | "Live" |
+| Reboot (`systemctl reboot`), no login afterwards | public `/healthz` answered again after 25 s; the open page went back to "Live" by itself; docker, caddy, android-web active; binder loaded; the backend service started once (no restart loop) |
+| Memory after boot with one device | 1.2 GiB used of 7.6 |
+
+Not yet tested: setup.sh on a truly fresh server (this one already had Docker, Node and the image); a second network or a phone; three viewers.
+
+Commands: `sudo SITE_HOST=43-205-158-181.sslip.io bash infra/setup.sh`; access code: `sudo grep ACCESS_CODE /etc/android-web.env`.
+
+## B1 / B2 results (one device per session, on demand), Sun 4 Oct ~14:15 IST
+
+Measured on the m7i-flex.large (2 vCPU, 7.6 GiB), image already pulled:
+
+| What | Value |
+|---|---|
+| Fresh device container, alone: `docker run` to `boot_completed` | 6.5 s |
+| Two fresh devices started at the same time | 15.4 s and 17.0 s |
+| Connect to "ready" through the backend (first session / second while the first runs) | 6.3 s / 12.7 s |
+| Page: "Start a new session" to "Live" | 7.1 s |
+| Memory per device, idle | 600 to 650 MiB (limit set: 2 GiB each) |
+| Host memory with 4 devices running | 3.0 GiB used of 7.6 |
+| Load average while two devices boot | 7 on 2 vCPU (the server is saturated during boots) |
+| Removing 3 devices (`docker rm -f`) | 0.8 s |
+| Reconnect with the session token (same device) | 3 ms to "ready" |
+
+`scripts/live-session-test.js` on the server: 16 of 16 checks pass (own device per session; file, setting and app change in A invisible in B; B's device cannot ping A's; unknown token gets a separate device; fourth user gets "busy"; End removes the device; token resumes the same device; device removed 30 s after the viewer vanishes; nothing left at the end).
+
+Crash test: `systemctl kill -s KILL android-web` during a session. The device stayed running as an orphan; systemd restarted the backend, which logged "removed 1 leftover device(s)", and the open page got a new device.
+
+Design facts: container name `android-web-<id>`, label `android-web=session`, Docker network `android-web-net` with inter-container traffic off, ADB on a random 127.0.0.1 port, session token 128-bit random (kept in the tab's sessionStorage; never logged; the id in logs is a hash prefix). Grace 30 s, idle 5 min, max 3, heartbeat ping every 15 s.
+
+Gotchas:
+- The backend's user is in the `docker` group, which is equivalent to root on the server.
+- Devices run `--privileged` (redroid needs it): weaker isolation than a VM.
+- After a backend crash the user's device is gone (new device on reconnect).

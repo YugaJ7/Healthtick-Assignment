@@ -7,10 +7,23 @@ const FLAG_KEY_FRAME = 0x02;
 const RECONNECT_MIN_MS = 500;
 const RECONNECT_MAX_MS = 5000;
 const STATS_INTERVAL_MS = 1000;
+const WS_CLOSE_BAD_CODE = 4401;
+const WS_CLOSE_TRY_AGAIN = 1013;
+const WS_CLOSE_SESSION_ENDED = 4410;
+const WS_CLOSE_BUSY = 4429;
+const BUSY_RETRY_MS = 5000;
+const ACCESS_CODE_KEY = 'accessCode';
+// Identifies this tab's device session, so a short network drop resumes the same device.
+const SESSION_TOKEN_KEY = 'sessionToken';
 
 const canvas = document.getElementById('screen');
 const statusEl = document.getElementById('status');
 const statsEl = document.getElementById('stats');
+const codeForm = document.getElementById('code-form');
+const codeInput = document.getElementById('code-input');
+const endedPanel = document.getElementById('ended');
+const endedReason = document.getElementById('ended-reason');
+const deviceButtons = document.getElementById('device-buttons');
 const context = canvas.getContext('2d');
 
 let socket = null;
@@ -93,9 +106,24 @@ function handleMessage(event) {
     if (typeof event.data !== 'string') return handlePacket(event.data);
     const message = JSON.parse(event.data);
     if (message.type === 'codec' && message.codec !== 'h264') throw new Error(`unsupported codec ${message.codec}`);
+    if (message.type === 'device') handleDeviceState(message);
   } catch (err) {
     restart(err.message);
   }
+}
+
+function handleDeviceState(message) {
+  if (message.token) sessionStorage.setItem(SESSION_TOKEN_KEY, message.token);
+  if (message.state === 'starting') setStatus('connecting', 'Starting your Android device (about 10 seconds)');
+  if (message.state === 'ready') setStatus('connecting', 'Device ready, waiting for video');
+}
+
+function showSessionEnded(reason) {
+  sessionStorage.removeItem(SESSION_TOKEN_KEY);
+  setStatus('ended', 'Session ended');
+  endedReason.textContent = `Session ended: ${reason || 'no reason given'}. The device and everything on it were removed.`;
+  endedPanel.hidden = false;
+  deviceButtons.hidden = true;
 }
 
 function restart(reason) {
@@ -107,23 +135,51 @@ function sendMessage(message) {
   if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
 }
 
-function scheduleReconnect() {
+// The access code arrives in the link as "#code=..." (the part after # is never sent
+// to the server in the page request) or is typed into the form. It is kept for this tab only.
+function readAccessCode() {
+  const fromLink = new URLSearchParams(location.hash.slice(1)).get('code');
+  if (fromLink) {
+    sessionStorage.setItem(ACCESS_CODE_KEY, fromLink);
+    history.replaceState(null, '', location.pathname);
+  }
+  return sessionStorage.getItem(ACCESS_CODE_KEY) || '';
+}
+
+function askForAccessCode() {
+  sessionStorage.removeItem(ACCESS_CODE_KEY);
+  setStatus('error', 'Access code needed');
+  codeForm.hidden = false;
+  codeInput.focus();
+}
+
+function handleClose(event) {
   closeDecoder();
   input.reset();
-  if (statusEl.dataset.state !== 'reconnecting') setStatus('reconnecting', 'Connection lost, reconnecting');
+  if (event.code === WS_CLOSE_BAD_CODE) return askForAccessCode();
+  if (event.code === WS_CLOSE_SESSION_ENDED) return showSessionEnded(event.reason);
+  if (event.code === WS_CLOSE_BUSY) {
+    setStatus('reconnecting', 'All devices are in use. This page tries again every few seconds.');
+    return setTimeout(connect, BUSY_RETRY_MS);
+  }
+  const reason = event.code === WS_CLOSE_TRY_AGAIN && event.reason ? event.reason : 'connection lost';
+  if (statusEl.dataset.state !== 'reconnecting') setStatus('reconnecting', `Reconnecting (${reason})`);
   setTimeout(connect, reconnectDelayMs);
   reconnectDelayMs = Math.min(reconnectDelayMs * 2, RECONNECT_MAX_MS);
 }
 
 function connect() {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  socket = new WebSocket(`${scheme}://${location.host}/stream`);
+  const query = new URLSearchParams({ code: readAccessCode() });
+  const sessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
+  if (sessionToken) query.set('session', sessionToken);
+  socket = new WebSocket(`${scheme}://${location.host}/stream?${query}`);
   socket.binaryType = 'arraybuffer';
   socket.addEventListener('open', () => {
     setStatus('connecting', 'Connected, waiting for video');
   });
   socket.addEventListener('message', handleMessage);
-  socket.addEventListener('close', scheduleReconnect);
+  socket.addEventListener('close', handleClose);
 }
 
 function start() {
@@ -144,6 +200,21 @@ function start() {
       canvas.focus();
     });
   }
+  document.getElementById('end-session').addEventListener('click', () => sendMessage({ t: 'end' }));
+  document.getElementById('new-session').addEventListener('click', () => {
+    endedPanel.hidden = true;
+    deviceButtons.hidden = false;
+    setStatus('connecting', 'Connecting');
+    connect();
+  });
+  codeForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    sessionStorage.setItem(ACCESS_CODE_KEY, codeInput.value.trim());
+    codeInput.value = '';
+    codeForm.hidden = true;
+    setStatus('connecting', 'Connecting');
+    connect();
+  });
   connect();
 }
 

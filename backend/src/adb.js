@@ -5,30 +5,35 @@ const { config } = require('./config');
 
 const ADB_TIMEOUT_MS = 20_000;
 
-// Runs one adb command against the configured device and resolves with its trimmed stdout.
-function adb(args) {
+function run(args) {
   return new Promise((resolve, reject) => {
-    execFile(config.adbPath, ['-s', config.deviceSerial, ...args], { timeout: ADB_TIMEOUT_MS }, (err, stdout, stderr) => {
+    execFile(config.adbPath, args, { timeout: ADB_TIMEOUT_MS }, (err, stdout, stderr) => {
       if (err) return reject(new Error(`adb ${args.join(' ')} failed: ${(stderr || err.message).trim()}`));
       resolve(stdout.trim());
     });
   });
 }
 
-// Starts a long-running command on the device (used for scrcpy-server).
-function adbShellSpawn(command) {
-  return spawn(config.adbPath, ['-s', config.deviceSerial, 'shell', command], { stdio: ['ignore', 'pipe', 'pipe'] });
+/**
+ * Runs one adb command against a device and resolves with its trimmed stdout.
+ * @param {string} serial device address, for example "127.0.0.1:32768"
+ * @param {string[]} args
+ * @returns {Promise<string>}
+ */
+function adb(serial, args) {
+  return run(['-s', serial, ...args]);
 }
 
-async function connectDevice() {
-  // `adb connect` is only meaningful for network devices such as a redroid container.
-  if (!config.deviceSerial.includes(':')) return;
-  await new Promise((resolve, reject) => {
-    execFile(config.adbPath, ['connect', config.deviceSerial], { timeout: ADB_TIMEOUT_MS }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`adb connect failed: ${(stderr || err.message).trim()}`));
-      resolve(stdout);
-    });
-  });
+/**
+ * Starts a long-running command on a device (used for scrcpy-server).
+ * @param {string} serial
+ * @param {string} command
+ */
+function adbShellSpawn(serial, command) {
+  return spawn(config.adbPath, ['-s', serial, 'shell', command], { stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
-module.exports = { adb, adbShellSpawn, connectDevice };
+const adbConnect = (serial) => run(['connect', serial]);
+const adbDisconnect = (serial) => run(['disconnect', serial]);
+
+module.exports = { adb, adbShellSpawn, adbConnect, adbDisconnect };
