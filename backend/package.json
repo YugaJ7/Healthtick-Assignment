@@ -1,0 +1,17 @@
+{
+  "name": "android-in-browser-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Relays an Android device's screen (scrcpy-server H.264) to browsers over WebSocket",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
