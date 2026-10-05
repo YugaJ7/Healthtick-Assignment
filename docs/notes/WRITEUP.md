@@ -17,7 +17,7 @@ Each item is in `PROCESS_LOG.md` with the time it happened.
 
 - **Killing the backend over SSH killed the SSH command itself.** `pkill -f "node src/server.js"` matches its own command line. Two silent failures before the cause was found; fixed with a script file and `pkill -x node`.
 - **A killed backend left adb port forwards behind**, and the next start failed to connect. Fixed with cleanup at start-up; later replaced by per-session devices and deletion of leftover devices.
-- **Nothing came back after a reboot.** Binder was not loaded at boot and nothing restarted the device or the backend. Fixed with a module-load entry and a systemd service; a reboot now brings the site back in 25 seconds without anyone logging in.
+- **Nothing came back after a reboot.** Binder was not loaded at boot and nothing restarted the device or the backend. Fixed with a module-load entry and a systemd service; a reboot now brings the site back in 25 to 33 seconds (measured on two servers) without anyone logging in.
 - **A code review found that one unexpected error while handling input could crash the backend** for every visitor (the error was rethrown inside an event handler). Now it is logged and only that viewer is closed.
 
 **Measuring latency**
@@ -44,7 +44,7 @@ Each item is in `PROCESS_LOG.md` with the time it happened.
 The limit today is one machine: about 600 MB of memory per device, and CPU, because Android draws and encodes video in software. Starting two devices at once took about 16 seconds each on 2 CPUs.
 
 1. **A bigger machine first.** The design does not change; more CPUs and memory carry more devices. How many per CPU has not been measured with several active users, so the first step would be that measurement. A machine with a graphics card would remove the software drawing cost.
-2. **Warm pool.** Keep one or two booted, unused devices ready so a visitor waits about a second instead of 7. They are still never reused: a device handed out once is deleted afterwards.
+2. **Warm pool.** Keep one or two booted, unused devices ready so a visitor waits about a second instead of about 10. They are still never reused: a device handed out once is deleted afterwards.
 3. **Several device hosts.** Split the backend in two: a small front service that owns sessions and picks a host, and an agent on each host that creates devices and relays video. The browser would connect straight to the host that has its device. Session state would move from memory to a small shared store, so a restart of the front service loses nothing.
 4. **WebRTC for bad networks.** WebSocket runs over TCP, so one lost packet stalls everything behind it. Fine on good connections, poor on mobile networks.
 5. **A queue with a position** instead of "all devices are in use", and sign-in with a quota per person instead of a limit per network address.

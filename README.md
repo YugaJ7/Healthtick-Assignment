@@ -160,7 +160,7 @@ A security review of the finished system found a path from an anonymous visitor 
 
 ## Measured
 
-- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps (the documented run, on the full device). With the video at 540 x 960 (the current default) two runs in Clock-only mode gave medians of 132 and 131 ms, 95th percentile 151 and 153 ms. Method, conditions and all samples are in [LATENCY.md](LATENCY.md).
+- **Latency:** on the current server with the current settings (Clock-only mode, video 540 x 960), two runs of 40 taps on 5 Oct gave medians of 153 and 132 ms from touch to visible reaction, 95th percentile 161 and 157 ms, with a round trip to the server of 35 ms. The first measurement, at full video size, gave 165 ms. Method, conditions, tuning and samples are in [LATENCY.md](LATENCY.md).
 - **Device start:** about 10 s from opening the link to live video in Clock-only mode (stages seen in the page: 5 % at 0.3 s, 20 % at 0.5 s, 35 % at 1.8 s, 55 % at 6.3 s, 75 % at 7.5 s, 80 % at 8.9 s, 100 % at 10.2 s). Earlier: 8.5 s from request to ready with the CPU limit and fences in place (one measurement); before them it was 6.5 s for a new device and about 7 s from "Start a new session" to live video.
 - **Memory:** about 600 MB per device.
 - **Reboot:** the public link answered again 33 s after a reboot of the current server, with no one logging in (25 s on the earlier server).
@@ -210,7 +210,7 @@ This project was built with AI help. `PROCESS_LOG.md` records each prompt and wh
 
 ## Time spent
 
-Assignment received Sat 3 Oct 2026, 13:00 IST. Times below come from the process log.
+Assignment received Sat 3 Oct 2026, 13:00 IST.
 
 | When (IST) | Work |
 |---|---|
@@ -219,7 +219,7 @@ Assignment received Sat 3 Oct 2026, 13:00 IST. Times below come from the process
 | Sun 4 Oct, 12:10 to about 17:00 | Live video, input, deployment, one device per session, latency, clipboard, Clock-only mode, reviews |
 | Sun 4 Oct, 17:20 to about 18:00 | Security fences, session recording, write-up |
 | Sun 4 Oct, 18:45 to about 20:15 | Redesigned session page, phone layout |
-| Mon 5 Oct, 01:45 to about 02:15 | Backend review, crash fix, feature folders |
-| Mon 5 Oct, 09:35 to about 12:15 | Deploy and verification, page code split, video tuning, kiosk lock, DuckDNS name, move to the new server |
+| Mon 5 Oct, 00:10 to about 03:15 | Backend review, crash fix, feature folders |
+| Mon 5 Oct, 09:35 to about 14:30 | Deploy and verification, page code split, video tuning, kiosk lock, DuckDNS name, move to the new server |
 
-Total so far: to be filled in by the author before submission.
+**Total: 34 hours** of coding and research.

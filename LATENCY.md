@@ -1,6 +1,6 @@
 # Latency
 
-**Result: a touch shows its effect on the page after a median of 165 ms (95th percentile 191 ms), measured over 40 taps on the deployed server.**
+**Result: on the deployed server, with the current settings, a touch shows its effect on the page after a median of 132 ms and 153 ms in two runs of 40 taps (95th percentile 157 and 161 ms).** The first measurement, with the earlier settings, gave a median of 165 ms; the tuning between the two is below.
 
 ## What is measured
 
@@ -11,9 +11,9 @@ One trial:
 1. Read the pixels in a 48 x 48 square around the device's Back button.
 2. Send a touch-down on the Back button and start the clock.
 3. Each time a video frame is drawn, read the same square. Android highlights the Back button as soon as it is pressed; when the square differs from step 1 (mean colour difference above 6 of 255), stop the clock.
-4. Send the touch-up, wait 0.9 s for the highlight to fade, and repeat.
+4. Slide the finger off the button and lift it, so no Back press happens. Wait 0.9 s for the highlight to fade, and repeat.
 
-The code is `frontend/latency.mjs`. Anyone can repeat it: open the deployed page, wait for "Live" with the device on its home screen, open **Latency test** and press **Run 40 taps**. The result appears as JSON with every sample.
+The code is `frontend/features/latency/latency.mjs` (one trial and the statistics) and `latencyCheck.mjs` beside it (the run). Anyone can repeat it: open the deployed page, wait until the device is shown (it opens on the Clock app, with the Back button at the bottom left), and press **Run latency check**. After about 45 seconds a panel beside the device shows the median, 95th percentile, fastest and slowest tap, the round trip to the server, and a chart with one bar per tap.
 
 ### What the number includes
 
@@ -25,7 +25,7 @@ Page, WebSocket to the server, scrcpy control socket, Android injecting the touc
 - The monitor after the canvas is drawn (up to one screen refresh, about 17 ms at 60 Hz).
 - Android's own delay before it shows the highlight is *included*, so a different on-screen reaction could give a slightly different number.
 
-## Conditions
+## Conditions of the first run
 
 | | |
 |---|---|
@@ -44,7 +44,7 @@ The test was started by an automated Chrome window that was not in front. The pa
 
 | Run | Median | 95th percentile | Min | Max |
 |---|---|---|---|---|
-| **30 frames per second (deployed setting)** | **165 ms** | **191 ms** | 141 ms | 196 ms |
+| **30 frames per second (kept)** | **165 ms** | **191 ms** | 141 ms | 196 ms |
 | 60 frames per second (tuning run, not kept) | 150 ms | 181 ms | 124 ms | 225 ms |
 
 Samples, 30 fps run (ms): 194 151 170 145 181 171 179 158 175 165 141 146 151 176 173 144 149 183 146 162 180 160 172 180 196 151 183 161 161 155 168 165 146 154 191 177 152 176 144 176
@@ -90,6 +90,25 @@ What this shows:
 - The picture was looked at once, at 379 x 674 on a laptop screen, and looked sharp. It was not compared on a large or high-density screen.
 
 Not tried: a GPU, a larger machine, a smaller device screen (which would also reduce drawing work), other encoder options.
+
+### Third round, Mon 5 Oct 2026, ~13:20 IST: the current server
+
+The site moved to a new server on 5 Oct (same machine type and region). These are the figures for the deployed site as it stands.
+
+| | |
+|---|---|
+| Server | AWS EC2 m7i-flex.large (2 vCPU, 8 GB), Mumbai (ap-south-1) |
+| Session | Clock-only mode (the default); video 540 x 960, 2 Mbit/s, 30 frames per second |
+| Client | Chrome 154 on Windows 11, the same laptop and home connection as above, started by an automated Chrome window |
+| Path | Public link `https://yuga-android.duckdns.org` |
+| Sessions on the server | 1 |
+
+| Run | Median | 95th percentile | Min | Max | Round trip to the server | Taps without a reaction |
+|---|---|---|---|---|---|---|
+| 1 | 153 ms | 161 ms | 122 ms | 225 ms | 35 ms | 0 of 40 |
+| 2 | 132 ms | 157 ms | 125 ms | 227 ms | 36 ms | 0 of 40 |
+
+One earlier run on this server, at 12:50, gave a median of 150 ms. The 21 ms between the two runs above is more than the 15 ms seen between runs on the previous server, so the honest summary is "about 130 to 155 ms" rather than one number. Individual samples were not saved in this round; the page shows them only as the chart.
 
 ## What went wrong while measuring
 

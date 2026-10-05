@@ -4,6 +4,8 @@ Phase 1 findings. Each claim is tagged **[verified]** (read in a cited source or
 
 Started: Sun 4 Oct 2026, ~00:20 IST.
 
+> **Status:** a snapshot of Phase 1 (research), kept as it was written, so it still says "none run yet" and "not chosen" in places. What happened next is in `docs/notes/NOTES.md`: the probe ran on 4 Oct (binder loads once `linux-modules-extra` is installed; `/dev/kvm` is present), architecture 1 below was chosen, and clipboard (section 7), restriction (section 8) and recording (section 9) were all built in the end.
+
 ---
 
 ## 0. Host feasibility (done first because it decides the architecture)
