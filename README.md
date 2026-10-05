@@ -15,7 +15,7 @@ No sign-in and nothing to install. Use a current Chrome or Edge on a computer (s
 | Scroll | Mouse wheel over the screen image. |
 | Type | Click the screen image, then type. Enter, Backspace, Delete, Tab and the arrow keys work. |
 | Back | The device's own navigation bar at the bottom of the screen. Right-click and Esc also send Back. |
-| Any window size | Resize the window; touches keep landing where you point. |
+| Any window size | Resize the window; touches keep landing where you point (to within 2 device pixels; the video is slightly smaller than the device's screen). |
 | Clipboard, computer to device | Tap a text field on the device (for example an alarm label), click the screen and press Ctrl+V. |
 | Clipboard, device to computer | Select text on the device and copy it, or press Ctrl+C with the screen focused. A line under the buttons says that it reached your computer's clipboard, or that the browser blocked it. |
 | One app only | Every session is locked to the Clock app; "Clock app only" is shown under the frame rate. See [Clock-only mode](#clock-only-mode). The full device is still there for testing: open the link with `?mode=full`. |
@@ -37,7 +37,8 @@ No sign-in and nothing to install. Use a current Chrome or Edge on a computer (s
 | Idle timeout | 5 minutes without input |
 | After the tab closes | The device is kept for 30 seconds (so a reload or a network drop keeps your device), then deleted |
 | Sessions per network address | 2. A third from the same address is told so and the page retries. People behind one office address share this limit. |
-| Device | Android 12 (redroid), 720 x 1280, 30 frames per second, software rendering, 2 GB memory and 1.5 CPU limit |
+| Device | Android 12 (redroid), 720 x 1280 screen, 30 frames per second, software rendering, 2 GB memory and 1.5 CPU limit |
+| Video | 540 x 960 (three quarters of the screen's size; measured about a fifth less CPU and about 10 ms quicker than full size), H.264 at 2 Mbit/s. `VIDEO_MAX_SIZE=1280` sends full size. |
 | Device network | None. Devices cannot reach the internet, the server or anything else, so the browser app on a device loads no pages. `DEVICE_INTERNET=on` in the settings file is meant to allow the public internet only; that setting has not been run. |
 | Recordings | Kept 24 hours, at most 200 MB each and 2 GB in total (oldest deleted first) |
 | Speed | Starting a device uses most of both CPUs for a few seconds, so three people starting at once will wait longer (two devices started together took about 16 s each). |
@@ -64,7 +65,7 @@ Each session's video is saved on the server as one MP4 file, automatically, from
 - **Tied to its session:** the file is named after the session's id, and `GET /recording?session=<token>` hands it out only for that session's secret token. The token stops controlling anything when the session ends; after that it only opens the recording.
 - **Play back or download:** on the page after **End session**, or later from **Recordings of your sessions** (kept in this browser's local storage). A session that ended because the tab was closed is in that list too.
 - **Kept for** 24 hours. A recording stops at 200 MB, and the oldest are deleted when the folder passes 2 GB.
-- **Tested:** unit tests for the file writer and recorder; on the live server a recorded session played in Chrome with the right size (720 x 1280), seeking worked, and an unknown token got "not found".
+- **Tested:** unit tests for the file writer and recorder; on the live server a recorded session played in Chrome with the right size (720 x 1280 at the time; recordings are now 540 x 960, the size of the video), seeking worked, and an unknown token got "not found".
 - **Limits:** video only. If the screen is rotated during a session, the file header still states the first size (not tested in a player). A recording cannot be opened from another browser or computer, because only this browser knows the token.
 
 ## Clock-only mode
@@ -118,7 +119,7 @@ Tested on AWS with Ubuntu Server 24.04 (x86-64). The kernel must be able to load
 
 The script installs Docker, adb and the kernel module package, loads binder now and at every boot, installs Node.js 22, pulls the Android image, copies the app to `/opt/android-web`, installs a systemd service that restarts on failure and at boot, and configures Caddy for HTTPS. It can be run again safely.
 
-Settings live in `/etc/android-web.env` (`MAX_SESSIONS`, `MAX_SESSIONS_PER_ADDRESS`, `DEVICE_CPUS`, `DEVICE_INTERNET`, `SESSION_IDLE_MS`, `SESSION_GRACE_MS`, `ACCESS_CODE`, `DEVICE_FPS`, `VIDEO_BIT_RATE`, ...); restart with `sudo systemctl restart android-web`. Logs: `sudo journalctl -u android-web -f`. Health: `curl -s http://127.0.0.1:8080/healthz`.
+Settings live in `/etc/android-web.env` (`MAX_SESSIONS`, `MAX_SESSIONS_PER_ADDRESS`, `DEVICE_CPUS`, `DEVICE_INTERNET`, `SESSION_IDLE_MS`, `SESSION_GRACE_MS`, `ACCESS_CODE`, `DEVICE_FPS`, `VIDEO_MAX_SIZE`, `VIDEO_CODEC_OPTIONS`, `VIDEO_BIT_RATE`, ...); restart with `sudo systemctl restart android-web`. Logs: `sudo journalctl -u android-web -f`. Health: `curl -s http://127.0.0.1:8080/healthz`.
 
 **Not yet proven:** the script has run several times on one server that already had Docker, Node.js and the Android image from earlier manual work. It has not been run on a brand-new server.
 
@@ -158,7 +159,7 @@ A security review of the finished system found a path from an anonymous visitor 
 
 ## Measured
 
-- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps (the documented run, on the full device). Two later runs in Clock-only mode with the redesigned page gave medians of 150 and 154 ms. Method, conditions and all samples are in [LATENCY.md](LATENCY.md).
+- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps (the documented run, on the full device). With the video at 540 x 960 (the current default) two runs in Clock-only mode gave medians of 132 and 131 ms, 95th percentile 151 and 153 ms. Method, conditions and all samples are in [LATENCY.md](LATENCY.md).
 - **Device start:** about 10 s from opening the link to live video in Clock-only mode (stages seen in the page: 5 % at 0.3 s, 20 % at 0.5 s, 35 % at 1.8 s, 55 % at 6.3 s, 75 % at 7.5 s, 80 % at 8.9 s, 100 % at 10.2 s). Earlier: 8.5 s from request to ready with the CPU limit and fences in place (one measurement); before them it was 6.5 s for a new device and about 7 s from "Start a new session" to live video.
 - **Memory:** about 600 MB per device.
 - **Reboot:** the site answered again 25 s after a server reboot, with no one logging in.

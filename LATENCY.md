@@ -70,7 +70,26 @@ The server-and-device part was not broken down further. It contains the touch in
 
 The second change should save up to one screen refresh, but there is no trustworthy "before" number for it. The old path can still be selected with `?draw=raf` to compare in a window that is in front.
 
-Not tried: lower resolution, a different bit rate, encoder options, a GPU.
+### Second round, Mon 5 Oct 2026: video size, encoder options, bit rate
+
+Same method, in Clock-only mode with the redesigned page. For each setting: two runs of 40 taps on a still screen, then the frame rate on the page and the device's CPU use (`docker stats`, five samples) while Clock's stopwatch was running. Same laptop, browser and server as above.
+
+| Setting | Median, run 1 / run 2 | 95th percentile, run 1 / run 2 | Frames per second, stopwatch running | Device CPU, stopwatch running | Kept? |
+|---|---|---|---|---|---|
+| Video 720 x 1280, 2 Mbit/s (before) | 150 / 135 ms | 176 / 160 ms | 30 | 112 to 114 % | |
+| Video 540 x 960, 2 Mbit/s | 132 / 131 ms | 151 / 153 ms | 30 | 89 to 95 % | **Yes**, now the default |
+| 540 x 960 with encoder options `priority=0,latency=1` | 133 / 129 ms | 162 / 145 ms | 30 | 92 to 97 % | No: no difference beyond run-to-run variation |
+| 540 x 960 at 1 Mbit/s | 130 / 132 ms | 148 / 150 ms | 30 | 88 to 91 % | No: no gain, and a lower bit rate can only cost picture quality |
+
+What this shows:
+
+- Sending the video at three quarters of the screen's size cut the device's CPU use by about a fifth and took roughly 10 ms off the reaction time. The device's own screen is still 720 x 1280; only the video is smaller.
+- The two baseline runs differ by 15 ms from each other, so differences of a few milliseconds between settings mean nothing. The 540 x 960 runs are the only ones that are both faster and consistent.
+- The frame rate did not change because it is capped at 30. The CPU that was freed is what a higher frame rate would need; 60 frames a second was not tried again in this round.
+- Cost of the smaller video: recordings are 540 x 960, and a touch is now placed to the nearest video pixel, which is 1.33 device pixels. Taps aimed at (719, 1279) and (0, 1279) landed at (718, 1278) and (0, 1278); taps at (360, 640) and (100, 100) landed exactly. At the old size all were exact.
+- The picture was looked at once, at 379 x 674 on a laptop screen, and looked sharp. It was not compared on a large or high-density screen.
+
+Not tried: a GPU, a larger machine, a smaller device screen (which would also reduce drawing work), other encoder options.
 
 ## What went wrong while measuring
 

@@ -1447,3 +1447,74 @@ The full pasted text is long and is not repeated here; it is in the session tran
 **Not re-run after the split:** the three live tests on the server (the backend changed only in its list of page files; they passed an hour earlier on the same backend code). A real Ctrl+C from the device, a real phone and other browsers remain unverified.
 
 **One thing noticed, not investigated:** in this run's loading log the first percentage seen after "0% Connecting" was 35 %, at 0.27 s; the 5 % and 20 % steps were not caught by the 30 ms sampling.
+
+---
+
+## Entry 65 — Mon 5 Oct 2026, 10:08 IST
+
+**User prompt (verbatim):**
+
+> how to reduce the latency and increase the fps
+
+**What the AI did:** answered in chat from the measurements already taken; no code changed and nothing new was measured. Where the roughly 150 ms goes (round trip about 28 ms, browser about 11 ms, the rest on the device: drawing in software, waiting for the next frame, encoding in software). Options given, each marked measured or not: 60 frames a second (measured on Sunday: 15 ms faster, one device used 189 % CPU; the 1.5 CPU limit added since would now hold it back), a lower video resolution (not measured), a larger machine (not measured), a machine with a graphics card (not measured, the largest expected gain), encoder settings (not measured), WebRTC (helps on poor networks only). Offered to try 60 frames a second with a lower resolution on the running server and measure it with the page's own latency check.
+
+---
+
+## Entry 66 — Mon 5 Oct 2026, 10:18 IST
+
+**User prompt (verbatim):** first "lets do option 1, 2,5,6" (interrupted by the user), then:
+
+> lets do option 1, 2,5,6 before u do, tell how, and what will be the effected and tradeoff
+
+**What the AI did:** explained in chat, for each of the four options from Entry 65 (60 frames a second, lower video resolution, encoder settings, WebRTC), how it would be done, what it affects and what it costs, and how each would be measured. Nothing was changed. The AI advised against starting WebRTC with about 26 hours left and the video and write-up still to do, and said why (a new transport on the server and in the page, a new firewall port, the latency check and loading screen would have to be redone, and no gain on a good network). Waiting for the user's go-ahead.
+
+**Note on times in this log:** Entry 64's heading says "about 10:25"; the clock read 10:18 when this entry was written, so that heading is wrong by some minutes. The split work ran from about 09:50 to 10:10.
+
+---
+
+## Entry 67 — Mon 5 Oct 2026, 10:20 IST
+
+**User prompt (verbatim):**
+
+> increasaing cpu size will cost?
+
+**What the AI did:** answered that the change it proposed (the `DEVICE_CPUS` setting, 1.5 to 2) costs nothing: it only changes how much of the existing 2-CPU server one device may use. Only a larger instance type would cost more, and the AI has not proposed that and has not looked up its price. No code changed.
+
+---
+
+## Entry 68 — Mon 5 Oct 2026, 10:24 IST
+
+**User prompt (verbatim):**
+
+> explian webrtc in depth
+
+**What the AI did:** explained WebRTC in chat: what it is, how it differs from the WebSocket path this project uses (UDP against TCP), the steps of setting up a connection (signalling, the offer and answer, finding a network path with ICE, STUN and TURN, encryption), how video travels (RTP packets, feedback, the receiver's jitter buffer), what it would change in this project, and when it helps. The explanation came from the AI's general knowledge; nothing was looked up or tested in this session, and the AI said so. No code changed.
+
+---
+
+## Entry 69 — Mon 5 Oct 2026, about 10:25 to 10:42 IST
+
+**User prompt (verbatim):**
+
+> do 2 and 5
+
+(Options 2 and 5 from Entry 65: lower video resolution, encoder settings. Options 1 and 6 were not asked for and were not done.)
+
+**What the AI did:**
+
+1. Code: a new setting `VIDEO_CODEC_OPTIONS`, passed to scrcpy as `video_codec_options`. Because the value ends up in a shell command on the device, only letters, digits and `_ . : = , -` are accepted; a value with other characters stops the backend at start-up (checked with a value that contained a semicolon followed by a shell command).
+2. Measured four settings on the live server with the page's own latency check (two runs of 40 taps each), the page's frame counter and `docker stats` while Clock's stopwatch ran:
+
+| Setting | Median (two runs) | 95th percentile | Frames/s | Device CPU |
+|---|---|---|---|---|
+| 720 x 1280, 2 Mbit/s (before) | 150 / 135 ms | 176 / 160 ms | 30 | 112 to 114 % |
+| 540 x 960, 2 Mbit/s | 132 / 131 ms | 151 / 153 ms | 30 | 89 to 95 % |
+| 540 x 960 + `priority=0,latency=1` | 133 / 129 ms | 162 / 145 ms | 30 | 92 to 97 % |
+| 540 x 960 at 1 Mbit/s | 130 / 132 ms | 148 / 150 ms | 30 | 88 to 91 % |
+
+3. Kept: video at 540 x 960, made the default in `config.js` (the server's settings file has no VIDEO lines). Not kept: the encoder options and the lower bit rate, which showed nothing beyond run-to-run variation. scrcpy accepted the encoder options without any message, so whether the software encoder used them is not known.
+4. Consequence found and handled: touch positions are in video pixels, so `scripts/live-restriction-test.js`, which used 720 x 1280 positions, would have sent positions outside the smaller video and had them rejected (its checks would then have passed without testing anything). The test now scales its positions to the video's size. All three live tests pass on the new default: 16, 15 and 12.
+5. Consequence found and reported: a touch is now placed to the nearest video pixel (1.33 device pixels). Taps aimed at (719,1279) and (0,1279) landed at (718,1278) and (0,1278); (360,640) and (100,100) landed exactly. The documents said "all exact"; they now say "within 2 device pixels".
+6. Documents: a second tuning section in LATENCY.md with the table above; README (video row, latency line, settings list, accuracy wording); ARCHITECTURE.md accuracy sentence.
+
+**Honest limits:** the two "before" runs differ by 15 ms from each other, so only the 540 x 960 result (faster in both runs, and consistent) is treated as real. The frame rate did not rise because it is capped at 30; this round frees CPU, it does not add frames. The picture was judged by eye once on a laptop screen. Unit tests: 114 pass.

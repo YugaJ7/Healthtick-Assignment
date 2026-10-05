@@ -18,12 +18,13 @@ const MAX_CONTROL_BACKLOG_BYTES = 64 * 1024;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function serverCommand(scid) {
-  const { deviceJar, version, maxSize, maxFps, bitRate } = config.scrcpy;
+  const { deviceJar, version, maxSize, maxFps, bitRate, codecOptions } = config.scrcpy;
   return [
     `CLASSPATH=${deviceJar}`, 'app_process', '/', 'com.genymobile.scrcpy.Server', version,
     `scid=${scid}`, 'log_level=info', 'tunnel_forward=true',
     'audio=false', 'control=true', 'cleanup=false', 'send_device_meta=false',
     'video_codec=h264', `max_size=${maxSize}`, `max_fps=${maxFps}`, `video_bit_rate=${bitRate}`,
+    ...(codecOptions === '' ? [] : [`video_codec_options=${codecOptions}`]),
   ].join(' ');
 }
 

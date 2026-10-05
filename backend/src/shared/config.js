@@ -13,6 +13,15 @@ function intFromEnv(name, fallback) {
   return value;
 }
 
+// Extra settings for Android's video encoder, in scrcpy's form "key=value,key=value"
+// (for example "priority=0,latency=1"). The value goes into a shell command on the
+// device, so only the characters such a list needs are accepted.
+function codecOptionsFromEnv(name) {
+  const raw = process.env[name] || '';
+  if (!/^[A-Za-z0-9_.:=,-]*$/.test(raw)) throw new Error(`${name} may only hold letters, digits and _ . : = , -`);
+  return raw;
+}
+
 const config = Object.freeze({
   host: process.env.HOST || '127.0.0.1',
   port: intFromEnv('PORT', 8080),
@@ -66,9 +75,12 @@ const config = Object.freeze({
     version: SCRCPY_VERSION,
     localJar: process.env.SCRCPY_SERVER_PATH || path.resolve(__dirname, '..', '..', 'vendor', `scrcpy-server-v${SCRCPY_VERSION}`),
     deviceJar: '/data/local/tmp/scrcpy-server.jar',
-    maxSize: intFromEnv('VIDEO_MAX_SIZE', 1280),
+    // Longest side of the video in pixels. The device's screen is 720 x 1280; sending it
+    // at 540 x 960 measured about 20 % less CPU and a slightly quicker reaction.
+    maxSize: intFromEnv('VIDEO_MAX_SIZE', 960),
     maxFps: intFromEnv('VIDEO_MAX_FPS', 30),
     bitRate: intFromEnv('VIDEO_BIT_RATE', 2_000_000),
+    codecOptions: codecOptionsFromEnv('VIDEO_CODEC_OPTIONS'),
   }),
 });
 

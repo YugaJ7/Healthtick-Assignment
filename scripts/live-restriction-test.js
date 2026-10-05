@@ -51,14 +51,14 @@ function deviceState(name) {
 function open(params) {
   const query = new URLSearchParams({ code: ACCESS_CODE, ...params });
   const ws = new WebSocket(`${URL_BASE}?${query}`);
-  const viewer = { ws, token: null, mode: null, hasVideoSize: false };
+  const viewer = { ws, token: null, mode: null, hasVideoSize: false, width: 0, height: 0 };
   viewer.closed = new Promise((resolve) => ws.on('close', (code, reason) => resolve({ code, reason: reason.toString() })));
   viewer.ready = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('device not ready in time')), READY_TIMEOUT_MS);
     ws.on('message', (data, isBinary) => {
       if (isBinary) return;
       const message = JSON.parse(data.toString());
-      if (message.type === 'session') viewer.hasVideoSize = true;
+      if (message.type === 'session') Object.assign(viewer, { hasVideoSize: true, width: message.width, height: message.height });
       if (message.type !== 'device') return;
       if (message.token) viewer.token = message.token;
       if (message.mode) viewer.mode = message.mode;
@@ -75,7 +75,15 @@ function open(params) {
 async function main() {
   const viewer = await open({ mode: 'restricted' }).ready;
   const name = containerOf(viewer.token);
-  const send = (message) => viewer.ws.send(JSON.stringify(message));
+  // Touch positions in this file are written for the device's 720 x 1280 screen. The
+  // server expects them in video pixels, and the video may be smaller than the screen.
+  const toVideo = (value, screen, video) => Math.min(video - 1, Math.round((value * video) / screen));
+  const send = (message) => {
+    const scaled = message.t === 'touch'
+      ? { ...message, x: toVideo(message.x, 720, viewer.width), y: toVideo(message.y, 1280, viewer.height) }
+      : message;
+    viewer.ws.send(JSON.stringify(scaled));
+  };
   while (!viewer.hasVideoSize) await sleep(200);
   await sleep(SETTLE_MS);
 

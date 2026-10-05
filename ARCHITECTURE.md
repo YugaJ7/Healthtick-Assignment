@@ -39,7 +39,7 @@ Measured from touch to visible reaction: median 165 ms, 95th percentile 191 ms (
 
 ## How input reaches the device
 
-The page turns pointer, wheel and key events into small JSON messages, for example `{"t":"touch","a":"down","id":0,"x":360,"y":640}`. Positions are in video pixels: the page converts from the canvas's size on screen to the video's size, so the window size does not matter (`frontend/features/input/pointerMap.mjs`; checked at several sizes and in landscape, all exact).
+The page turns pointer, wheel and key events into small JSON messages, for example `{"t":"touch","a":"down","id":0,"x":360,"y":640}`. Positions are in video pixels: the page converts from the canvas's size on screen to the video's size, so the window size does not matter (`frontend/features/input/pointerMap.mjs`; checked at several sizes and in landscape: exact when the video is the size of the screen, and within 2 device pixels now that the video is sent at 540 x 960).
 
 The backend never passes browser bytes to the device. It validates every field, then builds the binary scrcpy control message itself (`backend/src/features/input/controlMessages.js`) and writes it to scrcpy's control socket. Only touch, scroll, 14 named keys, text, and clipboard get and set can be produced; scrcpy's other commands (start an app, open the notification panel, power) cannot be reached from the browser at all. Input is limited to 1000 messages a second per viewer.
 
