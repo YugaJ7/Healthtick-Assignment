@@ -7,12 +7,19 @@ Running list of measurements, commands that worked, gotchas and decisions. Raw m
 | When | What | Hours |
 |---|---|---|
 | Sat 3 Oct 13:00 | Assignment received | |
-| Sat 3 Oct (evening) to Sun 4 Oct ~00:10 | Phase 0 in claude.ai chat | _fill in_ |
-| Sun 4 Oct ~00:10 to ~01:10 | Phase 1 research, spike scripts prepared | ~1 |
+| Sat 3 Oct | Reading the assignment, Phase 0 in claude.ai chat, glossary and checklist | 8 (the author's figure) |
+| Sun 4 Oct 00:10 to 03:20 | Research, cloud account, server check, three experiments | ~3 |
+| Sun 4 Oct 12:10 to ~17:00 | Live video, input, deployment, one device per session, latency, clipboard, Clock-only mode, reviews | ~5 |
+| Sun 4 Oct 17:20 to ~18:00 | Security fences, session recording, write-up | ~0.7 |
+| Sun 4 Oct 18:45 to ~20:15 | Redesigned session page, phone layout | ~1.5 |
+| Mon 5 Oct 01:45 to ~02:15 | Backend review, crash fix, feature folders | ~0.5 |
+| Mon 5 Oct 09:35 to ~12:15 | Deploy and verification, page code split, video tuning, kiosk lock, DuckDNS name, move to the new server | ~2.7 |
+
+These are spans taken from PROCESS_LOG.md, not a stopwatch. The total is the author's to state.
 
 ## Measurements
 
-None yet. To fill from the spikes:
+This table was the plan before the first server existed. The values are in the dated sections below; the current figures are collected under the heading Current figures at the end of this file.
 
 | What | Value | Conditions |
 |---|---|---|
@@ -26,7 +33,7 @@ None yet. To fill from the spikes:
 
 ## Commands that worked
 
-None on a server yet.
+See the commands listed in the dated sections below. Everything needed to set up a server is now in `infra/setup.sh`.
 
 ## Gotchas
 
@@ -39,7 +46,7 @@ None on a server yet.
 
 ## Manual steps done on servers (must end up in the setup script)
 
-None yet.
+All of them ended up in `infra/setup.sh`: packages, the binder and firewall kernel modules, Node.js, the Android image, the app, the settings file, the firewall service, the backend service and Caddy. On 5 Oct the script was run on a brand-new server with nothing done by hand (see the last dated section).
 
 ## Decisions
 
@@ -70,7 +77,7 @@ Server: AWS m7i-flex.large (2 vCPU, 7.6 GiB), region ap-southeast-2 (Sydney, not
 
 ### Gotchas found
 
-- The binder module is not loaded at boot. After a reboot it must be loaded again (needs a `/etc/modules-load.d/` entry in the setup script; not done yet).
+- The binder module is not loaded at boot. After a reboot it must be loaded again (needs a `/etc/modules-load.d/` entry in the setup script; not done yet). Done later the same day in `infra/setup.sh`.
 - Windows line endings: scripts copied from the laptop needed `sed -i 's/\r$//'` on the server.
 - The EC2 console's Ubuntu list has no plain 22.04 image; 24.04 was used.
 - Spike 2's Node page was not run on the server (Node is not installed there); the same two operations were timed directly with adb.
@@ -129,7 +136,7 @@ Other checks:
 - `settings put system pointer_location 1` shows an overlay but does not write coordinates to logcat on this image; `dumpsys input` RecentQueue does (last 10 events only).
 - A tap on the exact bottom-left corner also produces a BACK key event from the navigation bar. That is the device's behaviour, not a mapping error.
 - `user_rotation 1` has no effect while the launcher is in front (it is portrait only); it works with Settings in front.
-- After a stop/start of the instance: `modprobe binder_linux ...`, `docker start spike-redroid`, start the backend. Still manual.
+- After a stop/start of the instance: `modprobe binder_linux ...`, `docker start spike-redroid`, start the backend. Still manual. No longer true after the deployment step below: systemd starts everything.
 
 ## Deployment results, Sun 4 Oct ~14:00 IST
 
@@ -234,3 +241,96 @@ Gotchas:
 - Host rules live in chains ANDROID-WEB-FWD (hooked into DOCKER-USER) and ANDROID-WEB-IN (hooked into INPUT), matched on the bridge name `awnet0`.
 - The server's resolver is 172.31.0.2 (a private address), so with `DEVICE_INTERNET=on` DNS has to be allowed before the private ranges are dropped. That mode has not been run.
 - `curl -s` without `-f` treats an error page as success; the reboot timing probe was fooled by it.
+
+## Redesigned page and phone layout, Sun 4 Oct ~19:00 to 20:15 IST
+
+| What | Result |
+|---|---|
+| Loading stages seen in the page, new session | 0, 5, 20, 35, 55, 75, 80, 95, 100 % over 10.2 s (85 % passes too fast to see) |
+| Page reload during a session | same device back in about 1 s |
+| Tap positions at 379 x 674 and 231 x 411 CSS px | all exact (video was 720 x 1280 then) |
+| Latency check in Clock-only mode, three runs | median 153, 154, 150 ms |
+| Device deleted during boot | error screen after 2.7 s (90 s before the backend checked that the container still runs) |
+| Backend restarted during a session | "Reconnecting", then ended with "the session has expired" and the recording |
+| Phone emulation 390 x 844 | device 374 x 664, no sideways scrolling |
+
+What Android shows during a boot, sampled every 0.2 s on a throwaway device: zygote and surfaceflinger running at 1.1 s; `service.bootanim.exit=0` at 1.6 s; `sys.system_server.start_count=1` at 2.2 s; `sys.boot_completed=1` at 6.9 s.
+
+Gotchas:
+- This image never runs a boot animation (`debug.sf.nobootanimation=1`), so "boot animation running" cannot be a progress stage. `sys.system_server.start_count` is used instead.
+- A Clock-only session accepts touch slot 0 only, so the latency probe must use slot 0.
+- Sliding the finger off the Back button before lifting it cancels the press; the latency check no longer sends 40 Back presses.
+- Touch positions sent to the server are in video pixels, not device pixels.
+- Overriding and then deleting `window.innerHeight` in a test breaks the page's sizing until a reload; that was the test, not the page.
+- The browser test tool cannot resize a maximised window.
+
+## Backend crash, feature folders, page split, Mon 5 Oct ~01:45 and ~09:35 IST
+
+- `new URL(target, base)` throws for request targets that are not addresses: `//`, `http://[`, `//x:99999/`. Inside the HTTP handler that killed the whole backend. On the live site `curl --path-as-is https://HOST//` returned 502. Fixed: such requests get 400.
+- `node --test` with two quoted patterns (`"src/**/*.test.js" "../frontend/**/*.test.mjs"`) runs the tests of both trees; needs Node 22 or newer.
+- After moving files, 114 tests ran, the same number as before: the quickest proof that none was lost.
+- The page's module tree can be checked without a browser by fetching `/app.mjs` and following every `from './...'` over HTTP.
+- `frontend/app.mjs` went from 531 to 295 lines; six feature modules took the rest.
+- The laptop's public address changed overnight, so SSH (open to "My IP" only) timed out until the rule was updated in the console.
+
+## Video tuning, Mon 5 Oct ~10:25 IST
+
+Two runs of 40 taps per setting, Clock-only mode; frame rate and `docker stats` while Clock's stopwatch ran.
+
+| Setting | Median | 95th percentile | Frames/s | Device CPU |
+|---|---|---|---|---|
+| 720 x 1280, 2 Mbit/s | 150 / 135 ms | 176 / 160 ms | 30 | 112 to 114 % |
+| 540 x 960, 2 Mbit/s (kept, now the default) | 132 / 131 ms | 151 / 153 ms | 30 | 89 to 95 % |
+| 540 x 960 + `priority=0,latency=1` | 133 / 129 ms | 162 / 145 ms | 30 | 92 to 97 % |
+| 540 x 960, 1 Mbit/s | 130 / 132 ms | 148 / 150 ms | 30 | 88 to 91 % |
+
+Gotchas:
+- Run-to-run variation is about 15 ms, so only a difference seen in both runs counts.
+- With the smaller video a touch lands on the nearest video pixel (1.33 device pixels): (719,1279) arrives as (718,1278).
+- The Clock-only live test had positions written for 720 x 1280; with a smaller video they would have been rejected and the checks would have passed without testing anything. The test now scales them.
+- scrcpy accepts `video_codec_options` silently; whether the software encoder uses them is unknown.
+
+## Kiosk lock (LOCKED lock-task state), Mon 5 Oct ~10:50 IST
+
+- `am task lock <id>` from the shell always gives PINNED, even when the app is on the allow-list.
+- LOCKED needs the app on Android's lock-task allow-list and a start with `am start --lock-task -n <package>/<activity>`.
+- The allow-list call as root: `service call activity_task 32 i32 0 i32 1 s16 com.android.deskclock` (user 0, an array of one string). 32 is `TRANSACTION_updateLockTaskPackages` in `IActivityTaskManager` on this Android 12 image; the same name in `IActivityManager` is 172.
+- The numbers were read on the device: `/apex/com.android.art/bin/dexdump /system/framework/framework.jar` (dexdump is not on the path), then the class descriptor and the `value` line of the constant.
+- In LOCKED: Home key, Recents key, starting Settings (error 101), the notification shade and five Back presses all leave Clock in front; `am task lock stop` does nothing; the navigation bar shows Back only; no unpin hint.
+- The lock ends when the app's task ends (`am force-stop`), so the once-a-second check repairs by stopping and restarting the app with `--lock-task`.
+- SELinux is disabled inside the redroid container (`getenforce`: Disabled).
+- Results: restriction live test 16 of 16; latency check still works (median 127 ms in one run).
+
+## DuckDNS name and the move to a new server, Mon 5 Oct ~11:30 to 12:15 IST
+
+New server: m7i-flex.large, Mumbai, Ubuntu 24.04.4, kernel 6.17.0-1017-aws, Elastic IP 13.126.173.153, key `healthtick.pem`. Public name `yuga-android.duckdns.org`.
+
+| What | Result |
+|---|---|
+| `infra/setup.sh` on the brand-new server | exit 0 after 82 s, first run |
+| Live tests straight after | 16, 16 and 12 pass |
+| Device ready, first / second while the first runs | 9.3 s / 11.8 s |
+| Certificate for the DuckDNS name | issued within seconds of Caddy starting with that name |
+| Session through the public name | all stages, video after 10.5 s |
+| Reboot | public link answered 33 s after the reboot command |
+
+Gotchas:
+- Caddy takes several names in one site block (`name1, name2 {`), so the setup script's host setting can hold a comma-separated list.
+- Point the DNS name at a server only after that server serves the name; in between, the public link has no valid certificate.
+- Ubuntu's automatic updates can hold the package lock when the setup script runs (exit code 100 at the Caddy step once). Every `apt-get` in the script now waits for the lock (`-o DPkg::Lock::Timeout=300`).
+- A live test started while the backend is restarting aborts with "device not ready in time"; wait a few seconds after a deploy.
+- Recordings and the browser's list of them belong to the name the page was opened on, and to the server: they do not move.
+
+## Current figures (as of Mon 5 Oct, 12:15 IST)
+
+| What | Value | Where measured |
+|---|---|---|
+| Touch to visible reaction | median 132 / 131 ms, 95th percentile 151 / 153 ms | two runs of 40 taps, video 540 x 960, earlier server |
+| Frame rate | 30 per second while the screen changes, 0 when it is still | page counter |
+| CPU of one device with a moving screen | 89 to 95 % of one CPU | `docker stats` |
+| Memory per device, idle | about 600 MB | earlier server |
+| Opening the link to live video | about 10 s | page and script client |
+| Server reboot to public link answering | 33 s | current server |
+| Setup script on a new server | 82 s | current server |
+| Unit tests | 114 pass | laptop |
+| Live tests | session 16, restriction 16, security 12 | current server |

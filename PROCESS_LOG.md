@@ -1643,3 +1643,63 @@ The full pasted text is long and is not repeated here; it is in the session tran
 **Not verified:** the page in a real browser on the new server by the AI (only script clients and the three live tests); the setup script starting from `git clone` instead of a copied folder.
 
 **Left for the user:** terminate the old instance and release the old Elastic IP in the old account; a billing alert in the new account.
+
+---
+
+## Entry 76 — Mon 5 Oct 2026, 12:14 IST
+
+**User prompt (verbatim):**
+
+> now do a fine checklist and tell what is left.
+
+**What the AI did:** checked the current state (repo, public link, documents) and gave the user a checklist in chat against the assignment's core requirements, bonuses, deliverables and constraints, with what is left.
+
+Facts checked for it: the public link answers with 0 sessions; the GitHub repository page opens without a login (HTTP 200) and the local branch has nothing unpushed; the planning-chat link in the README opens (HTTP 200); the process log has 75 entries before this one.
+
+**Found while checking:**
+
+- `docs/notes/WRITEUP.md` no longer has the section for the author's own account of the decisions and of where the AI was wrong. The AI had left a placeholder heading there on Sunday; the file now ends after "Main security risks". That section is a required deliverable.
+- The README's time table stopped at Sunday 18:00 and has no total.
+- The demo script still told the reader to tap Home and Recents, which the kiosk lock removed.
+
+**Fixed by the AI:** the demo script step; three rows added to the README time table from the times in this log (the total is still the author's to state).
+
+---
+
+## Entry 77 — Mon 5 Oct 2026, 12:44 IST
+
+**User prompt (verbatim):** (with docs/notes/NOTES.md open in the editor)
+
+> see this file is complete or any thing missing
+
+**What the AI found:** the notes file stopped at Sunday 17:50. Nothing from the redesigned page onward was in it, and its opening sections still held the placeholders written before the first server existed, plus two remarks that later work had made untrue (binder at boot "not done yet", restart "still manual").
+
+**What the AI did:** replaced the placeholders with the time spans from this log and pointers to the dated sections; marked the two outdated remarks as done later, keeping the original words; appended five dated sections (redesigned page and phone layout; backend crash, feature folders and page split; video tuning; kiosk lock; DuckDNS and the new server) and a table of current figures. Every number came from this log's entries; nothing new was measured.
+
+**Error on the way:** an inline script failed to parse again (it contained a backslash before a quote); written as a file.
+
+---
+
+## Entry 78 — Mon 5 Oct 2026, 12:50 IST
+
+**User prompts:** the user ran `/code-review` (its output, three findings in the demo script and one remark about `config.js`, was shown to the user directly), then ran the slash command `/ecc:frontend-patterns` with no arguments.
+
+**How the AI read the second one:** review the page against that checklist, as it did for the backend in Entry 59. The checklist is written for React; the page is plain JavaScript, so only the parts that carry over were applied: state handling, keyboard use and focus, error handling, performance, forms.
+
+**Findings and what was done:**
+
+1. **Keyboard trap (fixed).** With the device's screen focused, Tab is sent to the device and the browser's own Tab is cancelled, in both directions. Someone using only a keyboard could not leave the screen. Shift+Tab is now left to the browser.
+2. **Panels and focus (fixed).** Opening "Previous recordings" or the latency results did not move the keyboard focus into them, closing did not return it, and Escape did nothing. Now: focus goes to the panel's Close button on opening, back to the button that opened it on closing, and Escape closes the panel that has the focus. The recordings panel is marked as a dialog for screen readers.
+3. **Not changed, stated to the user:** the browser's console suggests a canvas setting for the latency check's pixel reads; it would slow normal drawing, so it was left. The page has no router, no data cache and no form beyond the optional access code, so those parts of the checklist do not apply.
+
+**From the code review, handled in the same step:**
+
+- Demo script: the 2:15 step referred to a stopwatch that is not on screen by then; the spoken latency figure was the old one; the "older recording" step had nothing ensuring one exists. All three corrected.
+- The remark that `codecOptionsFromEnv` returns its value unchecked is not correct: the function rejects anything outside letters, digits and `_ . : = , -` before returning (`backend/src/shared/config.js`). No change.
+
+**Verified on the new server (page copied there; checked through `https://13-126-173-153.sslip.io`):** Tab on the screen is sent to the device, Shift+Tab is not intercepted; opening the recordings panel focuses its Close button, Escape closes it and focus returns to the opening button; after a latency check the focus is on the results' Close button, Escape closes the panel and focus returns to the latency button. Unit tests: 114 pass. Console: only the favicon 404.
+
+**Two things noticed:**
+
+- The automated test browser could not open `https://yuga-android.duckdns.org` (connection timed out) while `curl` from the same laptop could. Most likely the browser still holds the old server's address for that name. The check was done through the new server's sslip.io name instead. The AI has not seen the public name load in a browser.
+- The latency check in this run gave a median of 150 ms on the new server (one run). Earlier figures for the 540 x 960 video, 131 and 132 ms, were measured on the previous server. The demo script now says "usually between 130 and 150".

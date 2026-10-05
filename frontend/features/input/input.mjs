@@ -140,6 +140,9 @@ export function attachInput(canvas, send) {
     // Ctrl+V is left to the browser, which fires the paste event handled below.
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') send({ t: 'copy' });
     if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return;
+    // Tab goes to the device, so Shift+Tab is left to the browser: it is the way out of
+    // the screen for someone using only a keyboard.
+    if (event.key === 'Tab' && event.shiftKey) return;
     const special = SPECIAL_KEYS.get(event.key);
     if (special) {
       event.preventDefault();

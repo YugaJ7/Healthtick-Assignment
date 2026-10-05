@@ -13,7 +13,7 @@ No sign-in and nothing to install. Use a current Chrome or Edge on a computer (s
 | Live screen | Open the link. A loading screen counts from 0 to 100 % as the server creates and boots your device (about 10 seconds); each step of the number is a real event on the server. The device then fills the height of the window. |
 | Tap, long-press, swipe | Use the mouse or a finger on the screen image. Drags keep working if the pointer leaves the image. |
 | Scroll | Mouse wheel over the screen image. |
-| Type | Click the screen image, then type. Enter, Backspace, Delete, Tab and the arrow keys work. |
+| Type | Click the screen image, then type. Enter, Backspace, Delete, Tab and the arrow keys work. Because Tab goes to the device, Shift+Tab is what moves the keyboard focus off the screen image. |
 | Back | The device's own navigation bar at the bottom of the screen. Right-click and Esc also send Back. |
 | Any window size | Resize the window; touches keep landing where you point (to within 2 device pixels; the video is slightly smaller than the device's screen). |
 | Clipboard, computer to device | Tap a text field on the device (for example an alarm label), click the screen and press Ctrl+V. |
@@ -218,5 +218,8 @@ Assignment received Sat 3 Oct 2026, 13:00 IST. Times below come from the process
 | Sun 4 Oct, 00:10 to 03:20 | Research, cloud account, server check, three experiments |
 | Sun 4 Oct, 12:10 to about 17:00 | Live video, input, deployment, one device per session, latency, clipboard, Clock-only mode, reviews |
 | Sun 4 Oct, 17:20 to about 18:00 | Security fences, session recording, write-up |
+| Sun 4 Oct, 18:45 to about 20:15 | Redesigned session page, phone layout |
+| Mon 5 Oct, 01:45 to about 02:15 | Backend review, crash fix, feature folders |
+| Mon 5 Oct, 09:35 to about 12:15 | Deploy and verification, page code split, video tuning, kiosk lock, DuckDNS name, move to the new server |
 
 Total so far: to be filled in by the author before submission.

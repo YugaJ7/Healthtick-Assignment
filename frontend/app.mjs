@@ -251,16 +251,22 @@ async function runLatencyCheck() {
   if (!dispatch('latencyDone')) return;
   latency.show(report);
   fitStage();
-  canvas.focus();
+  // The results are what the visitor asked for, so the keyboard focus goes to them.
+  byId('latency-close').focus();
 }
 
 function toggleRecordings(isOpen) {
   recordingsDrawer.hidden = !isOpen;
   recordingsOpen.setAttribute('aria-expanded', String(isOpen));
   const drawerPlayer = byId('recordings-player');
-  if (isOpen) return renderRecordingList(byId('recording-list'), drawerPlayer);
+  if (isOpen) {
+    // Focus moves into the panel when it opens and back to its button when it closes.
+    byId('recordings-close').focus();
+    return renderRecordingList(byId('recording-list'), drawerPlayer);
+  }
   drawerPlayer.pause();
   drawerPlayer.hidden = true;
+  recordingsOpen.focus();
   return null;
 }
 
@@ -284,7 +290,18 @@ function start() {
   keyboardButton.addEventListener('click', () => keyboardField.focus());
   primaryButton.addEventListener('click', () => (state === 'ended' ? startNewSession() : endSession()));
   latencyButton.addEventListener('click', runLatencyCheck);
-  byId('latency-close').addEventListener('click', closeLatencyPanel);
+  const dismissLatencyPanel = () => {
+    closeLatencyPanel();
+    latencyButton.focus();
+  };
+  byId('latency-close').addEventListener('click', dismissLatencyPanel);
+  // Escape closes whichever panel the keyboard focus is in.
+  latencyPanel.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') dismissLatencyPanel();
+  });
+  recordingsDrawer.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') toggleRecordings(false);
+  });
   byId('retry').addEventListener('click', startNewSession);
   recordingsOpen.addEventListener('click', () => toggleRecordings(recordingsDrawer.hidden));
   byId('recordings-close').addEventListener('click', () => toggleRecordings(false));
