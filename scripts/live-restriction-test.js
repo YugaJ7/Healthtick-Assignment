@@ -5,7 +5,7 @@
 //   sudo /opt/node/bin/node /opt/android-web/scripts/live-restriction-test.js
 //
 // It opens one restricted session, tries to leave the Clock app in every way listed
-// below, and checks after each attempt that the device is still pinned on Clock.
+// below, and checks after each attempt that the device is still locked on Clock.
 // sudo is needed for `docker exec`. Exit code 0 means every check passed.
 
 const crypto = require('node:crypto');
@@ -43,7 +43,8 @@ function deviceState(name) {
   const resumed = report.split('\n').filter((line) => line.includes('ResumedActivity'));
   return {
     isOnClock: resumed.length > 0 && resumed.every((line) => line.includes(` ${ALLOWED_PACKAGE}/`)),
-    isPinned: /mLockTaskModeState=(PINNED|LOCKED)/.test(report),
+    // LOCKED is the kiosk state; PINNED (screen pinning, which a gesture can end) is not enough.
+    isPinned: report.includes('mLockTaskModeState=LOCKED'),
     focus: resumed.join(' ').replace(/\s+/g, ' ') || 'no resumed activity',
   };
 }
@@ -97,7 +98,7 @@ async function main() {
 
   check('the session reports that it is restricted', viewer.mode === 'restricted');
   const start = deviceState(name);
-  check('the device starts on Clock, pinned', start.isOnClock && start.isPinned, start.focus);
+  check('the device starts on Clock, in the LOCKED state', start.isOnClock && start.isPinned, start.focus);
   const launchable = inDevice(name, 'cmd package query-activities --brief -a android.intent.action.MAIN -c android.intent.category.LAUNCHER | grep /');
   check('Clock is the only app that can be opened', launchable.split('\n').every((line) => line.includes(ALLOWED_PACKAGE)), launchable.replace(/\s+/g, ' '));
 
@@ -150,9 +151,14 @@ async function main() {
   await sleep(SETTLE_MS);
   check('starting Settings on the device is refused', deviceState(name).isOnClock, settings);
   inDevice(name, 'am task lock stop');
+  await sleep(SETTLE_MS);
+  const afterStop = deviceState(name);
+  check('the command that ends screen pinning does not end this lock', afterStop.isPinned && afterStop.isOnClock, afterStop.focus);
+  // Killing the app is one way the lock really is lost: lock task mode ends with its task.
+  inDevice(name, `am force-stop ${ALLOWED_PACKAGE}`);
   await sleep(WATCHDOG_WAIT_MS);
   const repaired = deviceState(name);
-  check('the server re-pins the app within 3 s if the pin is removed', repaired.isPinned && repaired.isOnClock, repaired.focus);
+  check('the server restores the lock within 3 s if the app is killed', repaired.isPinned && repaired.isOnClock, repaired.focus);
 
   again.ws.send(JSON.stringify({ t: 'end' }));
   await again.closed;

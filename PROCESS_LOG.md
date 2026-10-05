@@ -1518,3 +1518,56 @@ The full pasted text is long and is not repeated here; it is in the session tran
 6. Documents: a second tuning section in LATENCY.md with the table above; README (video row, latency line, settings list, accuracy wording); ARCHITECTURE.md accuracy sentence.
 
 **Honest limits:** the two "before" runs differ by 15 ms from each other, so only the 540 x 960 result (faster in both runs, and consistent) is treated as real. The frame rate did not rise because it is capped at 30; this round frees CPU, it does not add frames. The picture was judged by eye once on a laptop screen. Unit tests: 114 pass.
+
+---
+
+## Entry 70 — Mon 5 Oct 2026, 10:55 IST
+
+**User prompt (verbatim):**
+
+> why to unpin this app touch n hold back button is coming.
+
+**What the AI did:** explained in chat that the message is Android's own hint for screen pinning, the mechanism Clock-only mode uses. From the AI's knowledge of Android (not re-tested today): it appears when the app is pinned and again when someone presses Back on the app's first screen or taps Home or Recents while pinned. Stated what is tested: the gesture the message describes needs two fingers held together, the server passes only one finger in a Clock-only session, and the live test "two fingers held on Back and Recents for 4 s" leaves the device on Clock; if the pin were removed anyway, the server re-applies it within about a second and no other app can be opened. Gave the options: leave it (it is already listed as a weak point in the README), or replace screen pinning with a device-owner lock, which shows no such message but needs a helper app built and installed on each device, several hours of work. No code changed.
+
+---
+
+## Entry 71 — Mon 5 Oct 2026, about 11:00 to 11:25 IST
+
+**User prompt (verbatim):**
+
+> Switch to a device-owner lock
+
+**What the AI found first:** the result the user wants (Android's LOCKED lock-task state: no unpin hint, no unpin gesture) can be reached without building a device-owner app. Tried on a throwaway device:
+
+1. `am task lock` from the shell always gives the PINNED state, whatever is on the allow-list (first attempt: the allow-list call succeeded but the state stayed PINNED).
+2. Android grants LOCKED only to apps on its lock-task allow-list. That list is filled by the system call `updateLockTaskPackages`, which a device owner's request ends in and which root may also make. Its number on this image was read from the device's own framework with `dexdump`: 32 in `IActivityTaskManager` (and 172 in `IActivityManager`). `dexdump` is not on the path; it is at `/apex/com.android.art/bin/dexdump`.
+3. With Clock on the list, `am start --lock-task` puts it straight into LOCKED. In that state the Home key, the Recents key, starting Settings, the notification shade and five Back presses all left the device on Clock, and `am task lock stop`, which removes screen pinning, did nothing.
+
+**Told the user:** this is the same lock state a device owner gives, reached by the server as root; no helper app is installed. The AI called it that plainly instead of claiming a device-owner app was built.
+
+**What the AI changed:**
+
+- `features/restriction/restriction.js`: the server puts Clock on the allow-list (as root through `docker exec`), starts it with `--lock-task`, and waits until Android reports LOCKED; a device that does not reach LOCKED is not handed out. The once-a-second check now requires LOCKED, and repairs by stopping and restarting Clock. New setting `LOCK_TASK_CALL_CODE` (default 32) because the call's number is specific to the Android version.
+- `scripts/live-restriction-test.js`: requires LOCKED (PINNED no longer passes); new check that `am task lock stop` does not end the lock; the "lock lost" check now kills Clock, since that is a way the lock really ends. 16 checks.
+- `infra/setup.sh`: every package step now waits up to five minutes for Ubuntu's package lock.
+- README, ARCHITECTURE.md and WRITEUP.md: Clock-only sections rewritten for the new lock, including its weak point (the version-specific call number).
+
+**Verified on the live server:**
+
+| Check | Result |
+|---|---|
+| `live-restriction-test.js` | 16 of 16, including "starts in the LOCKED state", "the command that ends screen pinning does not end this lock" and "restores the lock within 3 s if the app is killed" |
+| `live-session-test.js`, `live-security-test.js` | 16 of 16, 12 of 12 |
+| Page | the device's navigation bar shows only Back (Home and Recents are gone); after three Back presses and taps where Home and Recents used to be, no unpin message appeared and the screen stayed on Clock |
+| Latency check | still works (the Back button is where it was): 40 of 40 taps, median 127 ms, 95th percentile 153 ms |
+| Unit tests | 114 pass |
+
+**Errors on the way:**
+
+- A deploy ended with exit code 100: Ubuntu's automatic updates held the package lock when the setup script reached its last package step (Caddy). The files had been copied and the backend restarted, so the site was up; the script now waits for the lock, and a re-run ended with exit 0.
+- The first run of the live test right after that deploy aborted ("device not ready in time") because it started while the backend was restarting. The second run passed.
+- An inline edit script failed to parse again; written as a file.
+
+**Not verified:** Clock's "Change date & time" link under the new lock (it was tried by hand only under screen pinning); whether the unpin hint can still appear in some situation the AI did not try; the lock on any Android image other than this one.
+
+**Correction to the times in Entry 71 (added 11:13 IST):** the work ran from about 10:50 to 11:12, not 11:00 to 11:25. From here on the AI reads the clock before writing a heading.

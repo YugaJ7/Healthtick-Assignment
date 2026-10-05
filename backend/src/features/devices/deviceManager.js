@@ -114,9 +114,10 @@ async function createDevice(id, mode, onStage = () => {}) {
     const serial = `127.0.0.1:${port}`;
     await waitForBoot(name, serial, Date.now() + bootTimeoutMs, onStage);
     onStage('booted');
-    await hardenDevice((args) => docker(['exec', name, ...args]));
+    const execAsRoot = (args) => docker(['exec', name, ...args]);
+    await hardenDevice(execAsRoot);
     await adb(serial, ['push', config.scrcpy.localJar, config.scrcpy.deviceJar]);
-    if (mode === 'restricted') await applyRestriction(serial);
+    if (mode === 'restricted') await applyRestriction(serial, execAsRoot);
     onStage('secured');
     return { name, serial };
   } catch (err) {

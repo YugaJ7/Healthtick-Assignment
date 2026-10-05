@@ -78,9 +78,9 @@ By default every session is restricted: the device runs the Clock app and nothin
 
 **How it is enforced** (none of it in the browser):
 
-1. **On the device:** every other app that can be opened is disabled, and the Clock task is pinned with Android's lock task mode.
+1. **On the device:** every other app that can be opened is disabled, and Clock runs in Android's lock task mode in its LOCKED state, the state a kiosk uses. The device's navigation bar then shows only Back.
 2. **On the server, per message:** a restricted session's input is checked against the list above and anything else is dropped.
-3. **On the server, every second:** a check that the device is still pinned on Clock. If not, the pin is applied again.
+3. **On the server, every second:** a check that the device is still locked on Clock. If not, Clock is restarted in the locked state.
 
 | Way out | What stops it | Tested result |
 |---|---|---|
@@ -88,17 +88,18 @@ By default every session is restricted: the device runs the Clock app and nothin
 | Other key names, made-up message types, raw scrcpy bytes sent over the WebSocket | The server only builds device commands from its own fixed list; binary frames are refused | Stayed on Clock |
 | Tapping Home or Recents on the device screen | Lock task mode disables them | Stayed on Clock |
 | Swiping down for notifications or quick settings | Lock task mode disables the shade | Stayed on Clock |
-| The unpin gesture (Back and Recents held together) | Needs two fingers; the server passes one finger only | Stayed on Clock |
+| The unpin gesture of screen pinning (Back and Recents held together) | Does not exist in the LOCKED state; the server also passes one finger only | Stayed on Clock |
+| The command that ends screen pinning (`am task lock stop`), run on the device | Has no effect on the LOCKED state | Still locked |
 | Pressing Back until the app closes | No other app exists to go to; the watchdog reopens Clock | Stayed on Clock |
 | Clock's own "Change date & time" link into Settings | Settings is disabled, so the link fails; Clock crashes and is reopened by the watchdog | Back on Clock's main screen after about a second |
 | Starting another app on the device | Other apps are disabled; lock task mode refuses new tasks | Refused |
 | Reconnecting and asking for an unrestricted session with the same token | The mode belongs to the session on the server | Still restricted |
-| The pin being removed by some route not listed here | The server's check re-applies it | Re-pinned within 3 s |
+| The lock being lost by some route not listed here (tested by killing Clock, which ends lock task mode) | The server's check restarts Clock locked | Locked again within 3 s |
 | Power menu, share sheets, keyboard shortcuts | There is no power key or modifier-key input in the allowed list; Clock has no share action | Not tested individually |
 
-All but the "Change date & time" row are checked by `scripts/live-restriction-test.js` (15 checks); that row was tried by hand through the page.
+All but the "Change date & time" row are checked by `scripts/live-restriction-test.js` (16 checks); that row was tried by hand through the page, before the switch to the LOCKED state, and not again since.
 
-**Weak points:** the pin is Android's "screen pinning", not the stronger device-owner lock, so the single-finger rule and the server's check are what stop the unpin gesture. The "Change date & time" link is closed by letting Clock crash, which is ugly. A new escape inside Clock that keeps Clock in front (there is none known) would not be seen by the check.
+**How the LOCKED state is reached, and its weak points:** Android grants this state only to apps on its lock-task allow-list, which a device-owner app normally fills. Here the server fills it, as root, with the same system call a device owner's request ends in, and then starts Clock with `am start --lock-task`. No helper app is installed. The catch is that the system call is addressed by a number that differs between Android versions (32 on this Android 12 image, read from its framework with `dexdump`; setting `LOCK_TASK_CALL_CODE`). The server checks after every start that the device really is LOCKED and refuses to hand it out otherwise, so a wrong number fails safely, but another Android image needs its own number. Other weak points: the "Change date & time" link is closed by letting Clock crash, which is ugly; and a new escape inside Clock that keeps Clock in front (none is known) would not be seen by the check.
 
 ## Set up your own server
 
@@ -136,7 +137,7 @@ On the server, live tests open real sessions. Run them when nobody else is using
 ```bash
 # isolation between users and cleanup of devices (16 checks)
 sudo /opt/node/bin/node /opt/android-web/scripts/live-session-test.js
-# attempts to leave the Clock app in a restricted session (15 checks)
+# attempts to leave the Clock app in a restricted session (16 checks)
 sudo /opt/node/bin/node /opt/android-web/scripts/live-restriction-test.js
 # what a hostile app on a device could reach: debugging port, server, metadata address, app install
 sudo /opt/node/bin/node /opt/android-web/scripts/live-security-test.js

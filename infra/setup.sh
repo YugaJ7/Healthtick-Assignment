@@ -23,12 +23,14 @@ step() { printf '\n=== %s ===\n' "$1"; }
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 export DEBIAN_FRONTEND=noninteractive
 
+# Ubuntu installs security updates by itself and holds the package lock while it does;
+# each package step waits for that lock for up to five minutes.
 step "Packages"
-apt-get update -qq
-apt-get install -y -qq docker.io adb curl xz-utils openssl "linux-modules-extra-$(uname -r)"
+apt-get -o DPkg::Lock::Timeout=300 update -qq
+apt-get -o DPkg::Lock::Timeout=300 install -y -qq docker.io adb curl xz-utils openssl "linux-modules-extra-$(uname -r)"
 # The meta package pulls the extra modules for future kernels too, so a kernel
 # upgrade followed by a reboot does not lose binder. Not fatal if it is missing.
-apt-get install -y -qq linux-modules-extra-aws || echo "WARN: linux-modules-extra-aws not installed; binder may be missing after a kernel upgrade"
+apt-get -o DPkg::Lock::Timeout=300 install -y -qq linux-modules-extra-aws || echo "WARN: linux-modules-extra-aws not installed; binder may be missing after a kernel upgrade"
 
 step "Binder kernel module, now and at every boot"
 # iptable_filter and ip6table_filter: the firewall rule the backend sets inside each device
@@ -88,7 +90,7 @@ systemctl restart android-web
 
 if [ -n "$SITE_HOST" ]; then
   step "Caddy web server: HTTPS for ${SITE_HOST}, forwarding to the backend"
-  apt-get install -y -qq caddy
+  apt-get -o DPkg::Lock::Timeout=300 install -y -qq caddy
   printf '%s {\n\treverse_proxy 127.0.0.1:8080\n}\n' "$SITE_HOST" > /etc/caddy/Caddyfile
   systemctl enable caddy
   systemctl restart caddy

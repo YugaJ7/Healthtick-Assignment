@@ -59,11 +59,11 @@ Clipboard uses the same path: paste sends scrcpy's "set clipboard and paste" mes
 
 A session started in Clock-only mode is fenced in three places, none of them in the browser:
 
-1. **On the device:** every other app that can be opened is disabled, and Clock's task is pinned (Android lock task mode), which turns off Home, Recents and the notification shade.
-2. **In the backend, per message:** a restricted session may send one-finger touch, scroll, text, clipboard and 12 keys. Home, Recents, a second finger (needed for the unpin gesture) and everything else are dropped.
-3. **In the backend, every second:** a check that the device is still pinned on Clock; if not, the pin is applied again.
+1. **On the device:** every other app that can be opened is disabled, and Clock runs in Android's lock task mode in its LOCKED state (the kiosk state), which turns off Home, Recents and the notification shade and has no gesture that ends it. The server puts Clock on Android's lock-task allow-list itself, as root, so no device-owner app is needed.
+2. **In the backend, per message:** a restricted session may send one-finger touch, scroll, text, clipboard and 12 keys. Home, Recents, a second finger and everything else are dropped.
+3. **In the backend, every second:** a check that the device is still locked on Clock; if not, Clock is restarted locked.
 
-The mode is stored with the session on the server, so reconnecting cannot change it. The README lists each escape route and its tested result (`scripts/live-restriction-test.js`, 15 checks).
+The mode is stored with the session on the server, so reconnecting cannot change it. The README lists each escape route and its tested result (`scripts/live-restriction-test.js`, 16 checks).
 
 ## Recording
 
@@ -86,7 +86,8 @@ A device is treated as hostile. It cannot open connections to anything: the inte
 | Decode: WebCodecs | Media Source Extensions with a `<video>` element | Needs an MP4 muxer, and the player buffers, which adds delay. |
 | | JPEG frames | Not tried. Every frame is a whole picture, so far more data for the same frame rate. |
 | Input: scrcpy control socket | `adb shell input` | 23 ms per call and a new process each time; no multi-touch or clipboard. |
-| Restriction: screen pinning plus server checks | Device-owner lock task (kiosk) | Stronger, but needs a device-owner app built and installed; not attempted in the time. |
+| Restriction: the LOCKED lock-task state, set up by the server as root | Screen pinning | Used first. It shows a hint on how to unpin and has an unpin gesture, which only the server's one-finger rule stopped. |
+| | A device-owner app that requests the lock | The standard way, but needs an app built, signed and installed on every device at start. The same state was reached without one. |
 | Recording: own MP4 writer | ffmpeg as a helper process | Would add a dependency and a process per session. The writer is about 150 lines and uses the stream's own timestamps. |
 | One container per session | One shared device, or user profiles on one device | Would not isolate files, settings and apps. |
 

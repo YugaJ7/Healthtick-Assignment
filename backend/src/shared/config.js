@@ -56,6 +56,10 @@ const config = Object.freeze({
   restricted: Object.freeze({
     packageName: process.env.RESTRICTED_PACKAGE || 'com.android.deskclock',
     activity: process.env.RESTRICTED_ACTIVITY || '.DeskClock',
+    // Number of the system call updateLockTaskPackages in this Android image's
+    // IActivityTaskManager (Android 12: 32; read from the image's framework.jar with
+    // dexdump). Another Android version needs its own number.
+    lockTaskCallCode: intFromEnv('LOCK_TASK_CALL_CODE', 32),
     // Every other app on the redroid image that can be opened or that hosts screens
     // reachable from another app (Settings, the file picker).
     disabledPackages: Object.freeze([
