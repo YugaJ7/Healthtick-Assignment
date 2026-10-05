@@ -1,6 +1,6 @@
 # Write-up
 
-The architecture, with the alternatives considered, is in [ARCHITECTURE.md](ARCHITECTURE.md). The latency method and numbers are in [LATENCY.md](LATENCY.md). This file holds the rest: what went wrong, what I would do with more time, and my own account of working with the AI.
+The architecture, with the alternatives considered, is in [ARCHITECTURE.md](../../ARCHITECTURE.md). The latency method and numbers are in [LATENCY.md](../../LATENCY.md). This file holds the rest: what went wrong, what I would do with more time, and my own account of working with the AI.
 
 ## What went wrong
 

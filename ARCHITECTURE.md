@@ -11,20 +11,37 @@
 
 Three parts: a page with no build step, one Node.js process, and one Android container per visitor. Everything in the device and streaming path is open source (table at the end).
 
+## How the code is organised
+
+Both sides are split by feature, not by kind of file. Each feature folder holds its code and its tests; one small file per side does the wiring.
+
+| Feature | Backend (`backend/src/features/`) | Page (`frontend/features/`) |
+|---|---|---|
+| Video stream | `streaming/`: scrcpy session, stream parser, start-up stages | `stream/`: the player (decoding and drawing), H.264 helpers |
+| Input and clipboard | `input/`: validating and encoding control messages, reading device messages | `input/`: pointer, keys, phone keyboard, position mapping, clipboard |
+| Sessions | `sessions/`: who has which device, limits, timers | `session/`: the state machine, the connection to the server, the loading screen |
+| Devices | `devices/`: containers, adb, the fences around a device | |
+| Clock-only mode | `restriction/`: the lock, the input filter, the check | |
+| Recording | `recording/`: MP4 writer, recorder, serving and clean-up | `recordings/`: the list of this browser's recordings, and the recording shown when a session ends |
+| Latency | (a ping reply in the server) | `latency/`: the probe, the check that runs it, the results panel |
+| Access | `access/`: origin check, optional access code, response headers | |
+
+`backend/src/server.js` and `frontend/app.mjs` wire the features together; `backend/src/shared/` holds settings and logging.
+
 ## How the screen reaches the browser
 
 1. **Android runs in a container.** [redroid](https://github.com/remote-android/redroid-doc) is Android built to run as a Docker container on the server's own Linux kernel. It needs the kernel's `binder` module and no hardware virtualization. The server has no graphics card, so Android draws in software.
 2. **scrcpy-server captures and encodes.** The backend copies [scrcpy](https://github.com/Genymobile/scrcpy)'s server program (v4.1, unmodified) into the device and starts it over adb. It encodes the screen as H.264 with Android's own encoder and writes packets to a local socket, which adb forwards to the backend.
-3. **The backend relays.** It parses scrcpy's stream into packets (`videoParser.js`) and sends each one to the browser as a binary WebSocket message with a 9-byte header: flags (configuration, key frame) and a timestamp. It does not decode or re-encode video. A viewer that falls more than 4 MB behind is disconnected, and the page reconnects on a fresh key frame, so delay cannot pile up.
+3. **The backend relays.** It parses scrcpy's stream into packets (`backend/src/features/streaming/videoParser.js`) and sends each one to the browser as a binary WebSocket message with a 9-byte header: flags (configuration, key frame) and a timestamp. It does not decode or re-encode video. A viewer that falls more than 4 MB behind is disconnected, and the page reconnects on a fresh key frame, so delay cannot pile up.
 4. **The browser decodes.** The page gives each packet to the WebCodecs `VideoDecoder` and draws each decoded frame on a canvas at once. There is no player and no buffer.
 
 Measured from touch to visible reaction: median 165 ms, 95th percentile 191 ms ([LATENCY.md](LATENCY.md)).
 
 ## How input reaches the device
 
-The page turns pointer, wheel and key events into small JSON messages, for example `{"t":"touch","a":"down","id":0,"x":360,"y":640}`. Positions are in video pixels: the page converts from the canvas's size on screen to the video's size, so the window size does not matter (`frontend/pointerMap.mjs`; checked at several sizes and in landscape, all exact).
+The page turns pointer, wheel and key events into small JSON messages, for example `{"t":"touch","a":"down","id":0,"x":360,"y":640}`. Positions are in video pixels: the page converts from the canvas's size on screen to the video's size, so the window size does not matter (`frontend/features/input/pointerMap.mjs`; checked at several sizes and in landscape, all exact).
 
-The backend never passes browser bytes to the device. It validates every field, then builds the binary scrcpy control message itself (`controlMessages.js`) and writes it to scrcpy's control socket. Only touch, scroll, 14 named keys, text, and clipboard get and set can be produced; scrcpy's other commands (start an app, open the notification panel, power) cannot be reached from the browser at all. Input is limited to 1000 messages a second per viewer.
+The backend never passes browser bytes to the device. It validates every field, then builds the binary scrcpy control message itself (`backend/src/features/input/controlMessages.js`) and writes it to scrcpy's control socket. Only touch, scroll, 14 named keys, text, and clipboard get and set can be produced; scrcpy's other commands (start an app, open the notification panel, power) cannot be reached from the browser at all. Input is limited to 1000 messages a second per viewer.
 
 Clipboard uses the same path: paste sends scrcpy's "set clipboard and paste" message; text copied on the device arrives from scrcpy as a device message and is forwarded to the page.
 

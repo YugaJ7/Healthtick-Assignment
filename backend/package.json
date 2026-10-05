@@ -5,11 +5,11 @@
   "description": "Relays an Android device's screen (scrcpy-server H.264) to browsers over WebSocket",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "node --test"
+    "test": "node --test \"src/**/*.test.js\" \"../frontend/**/*.test.mjs\""
   },
   "dependencies": {
     "ws": "^8.18.0"

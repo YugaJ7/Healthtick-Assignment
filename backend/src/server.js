@@ -4,16 +4,16 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { WebSocketServer } = require('ws');
-const { config } = require('./config');
-const { logger } = require('./logger');
-const { startScrcpySession } = require('./scrcpySession');
-const { encodeClientMessage, InputError } = require('./controlMessages');
-const { isAccessCodeValid, isOriginAllowed, visitorAddress, securityHeaders } = require('./access');
-const { ensureNetwork, removeOrphans, createDevice, removeDevice } = require('./deviceManager');
-const { createSessionManager, BusyError, LimitError } = require('./sessionManager');
-const { isAllowedWhenRestricted, enforceRestriction } = require('./restriction');
-const { recorderFor, finishRecording, serveRecording, serveRecordingInfo, cleanUpRecordings } = require('./recordings');
-const { progressMessage } = require('./progress');
+const { config } = require('./shared/config');
+const { logger } = require('./shared/logger');
+const { startScrcpySession } = require('./features/streaming/scrcpySession');
+const { encodeClientMessage, InputError } = require('./features/input/controlMessages');
+const { isAccessCodeValid, isOriginAllowed, visitorAddress, securityHeaders, parseTarget } = require('./features/access/access');
+const { ensureNetwork, removeOrphans, createDevice, removeDevice } = require('./features/devices/deviceManager');
+const { createSessionManager, BusyError, LimitError } = require('./features/sessions/sessionManager');
+const { isAllowedWhenRestricted, enforceRestriction } = require('./features/restriction/restriction');
+const { recorderFor, finishRecording, serveRecording, serveRecordingInfo, cleanUpRecordings } = require('./features/recording/recordings');
+const { progressMessage } = require('./features/streaming/progress');
 
 const STREAM_PATH = '/stream';
 const PACKET_HEADER_BYTES = 9;
@@ -43,17 +43,28 @@ const WS_CLOSE_BUSY = 4429;
 const WS_CLOSE_ADDRESS_LIMIT = 4430;
 
 // Only these files are served; anything else is a 404, so no path from the URL reaches the disk.
+const JAVASCRIPT = 'text/javascript; charset=utf-8';
+// The page's modules, as paths inside the frontend folder (its tests are not served).
+const PAGE_MODULES = [
+  'app.mjs',
+  'features/input/clipboard.mjs',
+  'features/input/input.mjs',
+  'features/input/pointerMap.mjs',
+  'features/latency/latency.mjs',
+  'features/latency/latencyCheck.mjs',
+  'features/latency/latencyPanel.mjs',
+  'features/recordings/endedView.mjs',
+  'features/recordings/recordingsPanel.mjs',
+  'features/session/connection.mjs',
+  'features/session/loadingScreen.mjs',
+  'features/session/state.mjs',
+  'features/stream/h264.mjs',
+  'features/stream/player.mjs',
+];
 const STATIC_FILES = new Map([
   ['/', { file: 'index.html', type: 'text/html; charset=utf-8' }],
   ['/style.css', { file: 'style.css', type: 'text/css; charset=utf-8' }],
-  ['/app.mjs', { file: 'app.mjs', type: 'text/javascript; charset=utf-8' }],
-  ['/h264.mjs', { file: 'h264.mjs', type: 'text/javascript; charset=utf-8' }],
-  ['/input.mjs', { file: 'input.mjs', type: 'text/javascript; charset=utf-8' }],
-  ['/pointerMap.mjs', { file: 'pointerMap.mjs', type: 'text/javascript; charset=utf-8' }],
-  ['/latency.mjs', { file: 'latency.mjs', type: 'text/javascript; charset=utf-8' }],
-  ['/state.mjs', { file: 'state.mjs', type: 'text/javascript; charset=utf-8' }],
-  ['/latencyPanel.mjs', { file: 'latencyPanel.mjs', type: 'text/javascript; charset=utf-8' }],
-  ['/recordingsPanel.mjs', { file: 'recordingsPanel.mjs', type: 'text/javascript; charset=utf-8' }],
+  ...PAGE_MODULES.map((file) => [`/${file}`, { file, type: JAVASCRIPT }]),
 ]);
 
 const sessions = createSessionManager({
@@ -69,7 +80,12 @@ const sessions = createSessionManager({
 });
 
 function handleHttp(req, res) {
-  const { pathname, searchParams } = new URL(req.url, 'http://localhost');
+  const target = parseTarget(req.url);
+  if (target === null) {
+    res.writeHead(400, { 'content-type': 'text/plain' });
+    return res.end('bad request');
+  }
+  const { pathname, searchParams } = target;
   if (req.method === 'GET' && pathname === '/healthz') {
     res.writeHead(200, { 'content-type': 'application/json' });
     return res.end(JSON.stringify({ ok: true, sessions: sessions.count(), maxSessions: config.maxSessions }));
@@ -201,7 +217,9 @@ function startStream(ws, session, device) {
 }
 
 function handleViewer(ws, req) {
-  const params = new URL(req.url, 'http://localhost').searchParams;
+  const target = parseTarget(req.url);
+  if (target === null) return ws.close(WS_CLOSE_POLICY, 'bad request');
+  const params = target.searchParams;
   if (!isOriginAllowed(req.headers.origin, req.headers.host)) return ws.close(WS_CLOSE_POLICY, 'origin not allowed');
   if (!isAccessCodeValid(config.accessCode, params.get('code') ?? '')) return ws.close(WS_CLOSE_BAD_CODE, 'access code required');
 

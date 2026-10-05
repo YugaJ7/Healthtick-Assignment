@@ -1296,3 +1296,154 @@ The full pasted text is long and is not repeated here; it is in the session tran
 - The first latency run in the phone view had three slow taps (up to 1.6 s) right after the AI's keyboard test had typed into the device; not investigated.
 
 **Not verified:** anything on a real phone. In particular the real on-screen keyboard (autocorrect and word prediction behave differently per keyboard), whether the open keyboard covers the part of the device being typed into, and landscape on a phone (it gets the desktop layout).
+
+---
+
+## Entry 59 — Mon 5 Oct 2026, 01:43 to 01:55 IST
+
+**User prompt (verbatim):** the user ran the slash command `/ecc:backend-patterns` with no arguments.
+
+**How the AI read it:** review the backend against that checklist (API design, layering, data access, caching, error handling, authentication, rate limiting, background jobs, logging).
+
+**What the AI did:** read the backend's 17 source files (1,844 lines) against the checklist and reported in chat which patterns apply to this project and which do not (there is no database, cache, user accounts or job queue here).
+
+**One real defect found and fixed:** a request whose target is not a valid address, for example `GET //`, made `new URL(req.url, ...)` throw inside the request handler. Nothing caught it, so the whole backend process exited: one anonymous request would end every running session (systemd would restart the service three seconds later, with all devices removed).
+
+- Reproduced on the laptop with the real backend and Docker faked: `/healthz` answered, then `curl --path-as-is http://127.0.0.1:8080//` got no reply and the process was gone (`ERR_INVALID_URL`).
+- Fix: `parseTarget` in `access.js` returns null instead of throwing; the HTTP handler answers 400 and the WebSocket handler closes the connection. Two unit tests added; 114 pass.
+- After the fix, same local test: `//` and `//x:99999/` get 400, an unknown path gets 404, and `/healthz` still answers.
+
+**Not deployed:** the instance is stopped (the public link timed out at 01:44), so the live site still has this defect until the next deploy.
+
+**Reported but not changed:** no last-resort handler for unexpected exceptions (the service relies on systemd to restart it); nothing limits how fast one address can start and end sessions; session state lives in memory and is lost on restart; log lines are plain text, not structured.
+
+---
+
+## Entry 60 — Mon 5 Oct 2026, about 01:58 to 01:51 IST
+
+**User prompt (verbatim):**
+
+> make it flow Feature-Based Architecture for backend n frontend
+
+**What the AI did:** reorganised both sides into feature folders. Files were moved (with git, so history follows) and their imports rewritten by a script; no logic was changed.
+
+- Backend: `backend/src/server.js` stays as the wiring file. `backend/src/shared/` holds config and logger. `backend/src/features/` has `access`, `sessions`, `devices` (device manager, fences, adb), `streaming` (scrcpy session, stream parser, start-up stages), `input` (control and device messages), `restriction`, `recording` (MP4 writer, recorder, serving).
+- Page: `index.html`, `style.css` and `app.mjs` (wiring) stay at the top of `frontend/`. `frontend/features/` has `stream`, `input`, `latency`, `recordings`, `session`.
+- Each test now sits next to the code it tests (the tests of page modules moved from `backend/test/` into `frontend/features/`). `npm test` in `backend/` runs both trees. The folders `backend/test` and `backend/testHelpers` are gone.
+- The server's list of files it hands out was rewritten for the new page paths; test files are not on it.
+- Two paths computed from a file's own location (the frontend folder and the scrcpy-server file) were adjusted in `config.js`.
+- Documents: README layout table and file paths, a new "How the code is organised" table in ARCHITECTURE.md.
+
+**Also found:** the user had moved ARCHITECTURE.md and LATENCY.md back to the repo root and WRITEUP.md into docs/notes/ since Entry 54. Three README links and two links inside WRITEUP.md pointed at the old places; the AI corrected the links and left the files where the user put them.
+
+**Verified:**
+
+- Unit tests: 114 pass, the same count as before the move, so every test was found in its new place.
+- Started the real backend on the laptop with Docker faked and fetched the page's whole module tree over HTTP the way a browser resolves it: the stylesheet, `app.mjs` and all seven feature modules returned 200. Test files, an old path (`/input.mjs`) and a path trying to climb out of the folder returned 404.
+
+**Not verified:** the page was not opened in a browser after the move (the browser tool was disconnected), and nothing has been deployed: the instance is stopped. The live site still runs the version from before Entry 59. On the next deploy the old files will remain in /opt/android-web beside the new ones (the setup script copies, it does not delete); they are not loaded or served, but the AI will remove them then.
+
+**Why this split and not a deeper one (the AI's judgement):** `frontend/app.mjs` (about 450 lines) still holds the decoder, the connection and the page states together. Splitting it into the feature folders would change logic that could not be checked in a browser tonight, so it was left as the wiring file.
+
+---
+
+## Entry 61 — Mon 5 Oct 2026, 09:36 to 09:45 IST
+
+**User prompts (verbatim):** first "instance is started verify everything except deployment." (interrupted by the user), then:
+
+> instance is started verify
+
+**What the AI did:**
+
+1. The public link answers (`/healthz` ok, 0 sessions). It is running the version deployed on Sunday evening: `/input.mjs` (old layout) returns 200 and `/features/input/input.mjs` (new layout) returns 404.
+2. Confirmed the crash from Entry 59 on the live site: `curl --path-as-is https://43-205-158-181.sslip.io//` got 502 from the web server, which means the backend behind it had died. It was back a few seconds later (systemd restarted it). No session was running at the time.
+3. Tried to deploy the current code so that the fix, the feature folders and the phone layout could be verified on the server. **Blocked:** SSH to the server timed out. Port 22 is open only to the address the laptop had on Sunday; the laptop's public address is now 49.36.136.53. The AI has no AWS access to change that rule.
+
+**Nothing was deployed and nothing new was verified on the server.** The live tests, the page check in a browser and the fix all wait for SSH.
+
+**Waiting on the user:** update the SSH rule of the instance's security group to the current address (EC2 console, Security groups, Inbound rules, the SSH rule, Source: My IP), then say so.
+
+---
+
+## Entry 62 — Mon 5 Oct 2026, about 09:50 to 09:56 IST
+
+**User prompt (verbatim):**
+
+> done
+
+(The user had updated the SSH rule asked for in Entry 61.)
+
+**What the AI did:** deployed the current working tree (crash fix from Entry 59, feature folders from Entry 60) and verified it on the server. Before copying, the old `backend/src`, `backend/test`, `backend/testHelpers` and `frontend` folders in /opt/android-web were deleted so no file from the old layout is left there.
+
+| Check | Result |
+|---|---|
+| Setup script | exit 0; server now has `backend/src/{features,shared,server.js}` and `frontend/{app.mjs,features,index.html,style.css}` |
+| Request for `//` on the live link | 400, and `/healthz` still answers (before the deploy the same request gave 502) |
+| Old path `/input.mjs`, a test file, an unknown path | 404 each |
+| `live-session-test.js` | 16 of 16 |
+| `live-restriction-test.js` | 15 of 15 |
+| `live-security-test.js` | 12 of 12 |
+| Services | firewall, backend, Caddy and Docker active; no error lines in the backend log other than the known harmless "forward --remove" ones |
+| Page in Chrome, desktop 1536 x 674 | live after 4.6 s; all seven modules loaded from `/features/...`; a tap on the Stopwatch tab changed the screen |
+| Tap positions, read on the device | (719,0) (0,1279) (719,1279) (360,640) exact; (0,0) had left the device's ten-event list |
+| Latency check | 40 of 40 taps, median 158 ms, 95th percentile 226 ms, one slow tap of 793 ms; panel with 40 bars |
+| End session | "Ending session…", "Preparing recording…", then the recording (720 x 1280, 74.7 s) and the download link |
+| Previous recordings | 7 rows; a made-up token got 404 |
+| Phone emulation 390 x 844 | device 374 x 664, no sideways scrolling, Keyboard button sent typed text, ended view with the recording and a full-width download button |
+| Console | no script errors; 404s for the favicon and for remembered recordings that no longer exist |
+
+**Not verified in this round:** the error screen with Retry and the "session has expired" path (both were exercised on Sunday before the file move, and their code did not change); a real phone; other browsers. `/healthz` showed 0 sessions at the end.
+
+---
+
+## Entry 63 — Mon 5 Oct 2026, 09:58 IST
+
+**User prompt (verbatim):**
+
+> frontend/app.mjs is done splitting?
+
+**What the AI did:** answered no. In Entry 60 the files around it were moved into feature folders, but `frontend/app.mjs` itself was left whole on purpose, because splitting it changes logic and there was no browser to check it in that night. Told the user what a split would look like and that it can be done and checked now that the instance and the browser tool are available. No code changed.
+
+---
+
+## Entry 64 — Mon 5 Oct 2026, about 10:25 to 10:05 IST
+
+**User prompt (verbatim):**
+
+> do it
+
+(Answer to the AI's question at the end of Entry 63: whether to split `frontend/app.mjs`.)
+
+**What the AI did:** split `frontend/app.mjs` (531 lines, 33 functions) into feature modules. Each new module is a small factory that gets what it needs passed in, so no module reaches back into `app.mjs`.
+
+| New file | Lines | Holds |
+|---|---|---|
+| `features/stream/player.mjs` | 121 | decoding packets and drawing frames |
+| `features/session/connection.mjs` | 91 | the WebSocket, close codes, session token and access code storage |
+| `features/session/loadingScreen.mjs` | 68 | percentage, status line, error text, access-code form |
+| `features/recordings/endedView.mjs` | 61 | waiting for a recording to be complete and showing it |
+| `features/latency/latencyCheck.mjs` | 79 | pings, running the probe, showing the report |
+| `features/input/clipboard.mjs` | 16 | device-to-computer copy with its notice |
+
+`app.mjs` is now 295 lines: the state machine wiring, layout sizing, message routing, close handling and button handlers. The server's list of page modules was regenerated (14 modules).
+
+**Verified on the deployed link after the split:**
+
+| What | Result |
+|---|---|
+| Unit tests | 114 pass |
+| Page loads | all 14 modules fetched; no script errors in the console |
+| Loading to live | 7 s; "Clock app only"; frame rate shown |
+| Taps, read on the device | (719,0) (0,1279) (719,1279) (360,640) exact; (0,0) had left the ten-event list |
+| Paste event | notice "Pasted into the device." |
+| Latency check | button "Running… 10/40", disabled, spinner class set; result 40 of 40, median 146 ms, 95th percentile 193 ms; 40 bars |
+| End session | Ending, Preparing recording, then the recording playing (67 s) and the download link |
+| Previous recordings | 8 rows; Play showed a recording in the panel |
+| Start a new session | live again; recording and latency panel hidden |
+| Device deleted mid-boot | error screen with Retry after 2.6 s; Retry gave a live session |
+| Backend restarted mid-session | Reconnecting, then ended with "the session has expired" and its recording |
+| Phone emulation 390 x 844 | same layout as before the split; Keyboard button sent typed text; ended view correct |
+
+**Not re-run after the split:** the three live tests on the server (the backend changed only in its list of page files; they passed an hour earlier on the same backend code). A real Ctrl+C from the device, a real phone and other browsers remain unverified.
+
+**One thing noticed, not investigated:** in this run's loading log the first percentage seen after "0% Connecting" was 35 %, at 0.27 s; the 5 % and 20 % steps were not caught by the 30 ms sampling.

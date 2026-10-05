@@ -59,7 +59,7 @@ Everything in the device and streaming path is open source: redroid (Apache-2.0)
 
 ## Session recording
 
-Each session's video is saved on the server as one MP4 file, automatically, from the first frame to the end of the session. It is the device's own H.264 stream written into the file with its timestamps (`backend/src/mp4.js`, `backend/src/recorder.js`); nothing is re-encoded. A page reload or reconnect continues the same file.
+Each session's video is saved on the server as one MP4 file, automatically, from the first frame to the end of the session. It is the device's own H.264 stream written into the file with its timestamps (`backend/src/features/recording/`); nothing is re-encoded. A page reload or reconnect continues the same file.
 
 - **Tied to its session:** the file is named after the session's id, and `GET /recording?session=<token>` hands it out only for that session's secret token. The token stops controlling anything when the session ends; after that it only opens the recording.
 - **Play back or download:** on the page after **End session**, or later from **Recordings of your sessions** (kept in this browser's local storage). A session that ended because the tab was closed is in that list too.
@@ -128,7 +128,7 @@ Settings live in `/etc/android-web.env` (`MAX_SESSIONS`, `MAX_SESSIONS_PER_ADDRE
 cd backend && npm install && npm test
 ```
 
-112 unit tests: the scrcpy video and device-message parsers, the control-message encoder (checked against scrcpy's own test vectors), position mapping at several window sizes, session rules (limit, limit per address, grace time, idle timeout, fixed mode), the restricted-mode input list, the response headers, the MP4 writer and recorder, the start-up stages, the page's state machine, and the latency statistics. They need no device.
+114 unit tests, each next to the code it tests: the scrcpy video and device-message parsers, the control-message encoder (checked against scrcpy's own test vectors), position mapping at several window sizes, session rules (limit, limit per address, grace time, idle timeout, fixed mode), the restricted-mode input list, the response headers, the MP4 writer and recorder, the start-up stages, the page's state machine, and the latency statistics. They need no device.
 
 On the server, live tests open real sessions. Run them when nobody else is using the site:
 
@@ -147,18 +147,18 @@ A security review of the finished system found a path from an anonymous visitor 
 
 | Fence | Where |
 |---|---|
-| The device's debugging port accepts connections from the server only, not from the device itself | `backend/src/hardening.js` |
-| Visitors cannot install apps on a device | `backend/src/hardening.js` |
+| The device's debugging port accepts connections from the server only, not from the device itself | `backend/src/features/devices/hardening.js` |
+| Visitors cannot install apps on a device | `backend/src/features/devices/hardening.js` |
 | Devices cannot reach the server, the private network, the cloud metadata address or the internet | `infra/device-firewall.sh` |
-| One network address can hold at most 2 of the 3 devices (`MAX_SESSIONS_PER_ADDRESS`) | `backend/src/sessionManager.js` |
-| Each device is limited to 1.5 CPUs (`DEVICE_CPUS`) | `backend/src/deviceManager.js` |
-| The page loads scripts and styles from this site only (content security policy) | `backend/src/access.js` |
+| One network address can hold at most 2 of the 3 devices (`MAX_SESSIONS_PER_ADDRESS`) | `backend/src/features/sessions/sessionManager.js` |
+| Each device is limited to 1.5 CPUs (`DEVICE_CPUS`) | `backend/src/features/devices/deviceManager.js` |
+| The page loads scripts and styles from this site only (content security policy) | `backend/src/features/access/access.js` |
 
 **Status:** all of these were tested on the live server on 4 Oct. `scripts/live-security-test.js` passes 12 of 12 checks (against the version before the fences, 10 of its 13 checks failed), the per-address limit refused a third session through the public address, and the fences were still in place after a reboot. One thing found on the way: the debugging shell runs as Android's `shell` user, not as root, so the original path was less direct than the review assumed.
 
 ## Measured
 
-- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps (the documented run, on the full device). Two later runs in Clock-only mode with the redesigned page gave medians of 150 and 154 ms. Method, conditions and all samples are in [docs/LATENCY.md](docs/LATENCY.md).
+- **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps (the documented run, on the full device). Two later runs in Clock-only mode with the redesigned page gave medians of 150 and 154 ms. Method, conditions and all samples are in [LATENCY.md](LATENCY.md).
 - **Device start:** about 10 s from opening the link to live video in Clock-only mode (stages seen in the page: 5 % at 0.3 s, 20 % at 0.5 s, 35 % at 1.8 s, 55 % at 6.3 s, 75 % at 7.5 s, 80 % at 8.9 s, 100 % at 10.2 s). Earlier: 8.5 s from request to ready with the CPU limit and fences in place (one measurement); before them it was 6.5 s for a new device and about 7 s from "Start a new session" to live video.
 - **Memory:** about 600 MB per device.
 - **Reboot:** the site answered again 25 s after a server reboot, with no one logging in.
@@ -186,16 +186,19 @@ The page needs WebCodecs, which browsers only provide on HTTPS (or localhost).
 
 | Path | Contents |
 |---|---|
-| `backend/` | Node.js server: sessions, device containers, scrcpy relay, input checks, tests |
-| `frontend/` | The page: video decoding, input, clipboard, latency test (plain JavaScript, no build step) |
+| `backend/src/server.js` | Wiring only: HTTP, WebSocket, start-up and shutdown |
+| `backend/src/features/` | One folder per feature, code and tests together: `access`, `sessions`, `devices`, `streaming`, `input`, `restriction`, `recording` |
+| `backend/src/shared/` | Settings and logging, used by every feature |
+| `frontend/` | The page (plain JavaScript, no build step): `index.html`, `style.css`, and `app.mjs` for wiring |
+| `frontend/features/` | One folder per feature, code and tests together: `stream`, `input`, `latency`, `recordings`, `session` |
 | `infra/` | `setup.sh`, the device firewall and the systemd services |
 | `scripts/` | Server feasibility check, scrcpy-server download, live tests |
 | `spikes/` | Throwaway experiments from before the build; the app does not use them |
 | `docs/DEMO_SCRIPT.md` | Script for the demo video |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the screen, input, isolation and restriction work; alternatives rejected |
-| [`docs/WRITEUP.md`](docs/WRITEUP.md) | What went wrong, what I would do with more time, my decisions and where the AI was wrong |
-| [`docs/LATENCY.md`](docs/LATENCY.md) | Latency method and results |
-| `docs/notes/` | `RESEARCH.md` (research before the build) and `NOTES.md` (raw measurements, commands, gotchas) |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | How the screen, input, isolation and restriction work; alternatives rejected |
+| [`docs/notes/WRITEUP.md`](docs/notes/WRITEUP.md) | What went wrong, what I would do with more time, my decisions and where the AI was wrong |
+| [`LATENCY.md`](LATENCY.md) | Latency method and results |
+| `docs/notes/` | Also `RESEARCH.md` (research before the build) and `NOTES.md` (raw measurements, commands, gotchas) |
 | `docs/brief/` | The assignment text, the requirements checklist, and the planning guide and prompt used to start the work |
 | `PROCESS_LOG.md` | Running record of every prompt given to the AI coding agent and what it did |
 

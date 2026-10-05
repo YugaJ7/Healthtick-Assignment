@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Downloads the scrcpy-server binary that the backend pushes to the Android device.
-# The version must match SCRCPY_VERSION in backend/src/config.js exactly: scrcpy's
+# The version must match SCRCPY_VERSION in backend/src/shared/config.js exactly: scrcpy's
 # protocol is internal and changes between versions (scrcpy doc/develop.md).
 # Usage: bash scripts/fetch-scrcpy-server.sh
 set -euo pipefail
