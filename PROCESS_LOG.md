@@ -1703,3 +1703,17 @@ Facts checked for it: the public link answers with 0 sessions; the GitHub reposi
 
 - The automated test browser could not open `https://yuga-android.duckdns.org` (connection timed out) while `curl` from the same laptop could. Most likely the browser still holds the old server's address for that name. The check was done through the new server's sslip.io name instead. The AI has not seen the public name load in a browser.
 - The latency check in this run gave a median of 150 ms on the new server (one run). Earlier figures for the 540 x 960 video, 131 and 132 ms, were measured on the previous server. The demo script now says "usually between 130 and 150".
+
+---
+
+## Entry 79 — Mon 5 Oct 2026, 14:40 IST
+
+**User prompt (verbatim):**
+
+> updfate the readme attach the demo video which is in docs
+
+**What the AI did:** found the video the user recorded, `docs/demo.mp4` (8.8 MB, written today at 14:31). Read its header: 4 minutes 31 seconds, one video track and one audio track. Added a "Demo video" line with a link under the live link at the top of the README, and a row for it in the repository layout table.
+
+**What the AI did not do:** watch the video. It cannot say what the recording shows, whether it is one take, or whether the narration is audible; the README line therefore states only the file and its length. The AI first wrote "one continuous recording of the deployed site with narration" and removed those words because it had not checked them.
+
+**Note for the commit:** the user's earlier rule was to keep result files out of commits; the video is a required deliverable and the user asked for it to be attached, so it belongs in this commit. At 8.8 MB it is well under GitHub's file size limit.

@@ -4,6 +4,8 @@ A real Android device, running on a server, that you watch and control from a we
 
 **Live: https://yuga-android.duckdns.org**
 
+**Demo video:** [docs/demo.mp4](docs/demo.mp4) (4 min 31 s).
+
 No sign-in and nothing to install. Use a current Chrome or Edge on a computer (see [Browsers](#browsers)).
 
 ## What you can do
@@ -196,7 +198,8 @@ The page needs WebCodecs, which browsers only provide on HTTPS (or localhost).
 | `infra/` | `setup.sh`, the device firewall and the systemd services |
 | `scripts/` | Server feasibility check, scrcpy-server download, live tests |
 | `spikes/` | Throwaway experiments from before the build; the app does not use them |
-| `docs/DEMO_SCRIPT.md` | Script for the demo video |
+| [`docs/demo.mp4`](docs/demo.mp4) | The demo video |
+| `docs/DEMO_SCRIPT.md` | The script the demo video follows |
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | How the screen, input, isolation and restriction work; alternatives rejected |
 | [`docs/notes/WRITEUP.md`](docs/notes/WRITEUP.md) | What went wrong, what I would do with more time, my decisions and where the AI was wrong |
 | [`LATENCY.md`](LATENCY.md) | Latency method and results |
