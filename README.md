@@ -2,7 +2,7 @@
 
 A real Android device, running on a server, that you watch and control from a web page. Each visitor gets their own device, created when they arrive and deleted when they leave.
 
-**Live: https://43-205-158-181.sslip.io**
+**Live: https://yuga-android.duckdns.org**
 
 No sign-in and nothing to install. Use a current Chrome or Edge on a computer (see [Browsers](#browsers)).
 
@@ -31,7 +31,7 @@ No sign-in and nothing to install. Use a current Chrome or Edge on a computer (s
 | Provider | Amazon Web Services, EC2 (a plain virtual machine; no device-streaming service is used) |
 | Region | Mumbai (ap-south-1) |
 | Machine | m7i-flex.large: 2 vCPU, 8 GB memory, 30 GB disk, Ubuntu 24.04 |
-| Address | Elastic IP 43.205.158.181; the host name comes from sslip.io, a free service that maps `43-205-158-181.sslip.io` to that address |
+| Address | Elastic IP 13.126.173.153. The host name `yuga-android.duckdns.org` comes from DuckDNS, a free name service, and points at that address. |
 | HTTPS | Caddy, with an automatic Let's Encrypt certificate |
 | Sessions at once | 3. A fourth visitor sees "All devices are in use" and the page retries by itself. |
 | Idle timeout | 5 minutes without input |
@@ -107,7 +107,7 @@ Tested on AWS with Ubuntu Server 24.04 (x86-64). The kernel must be able to load
 
 1. Create a virtual machine: 2 or more vCPUs, 8 GB memory, 30 GB disk, Ubuntu 24.04 x86-64.
 2. Open ports 80 and 443 to everyone and port 22 to yourself.
-3. Give it a fixed public address and a host name that points to it. Without a domain, use `A-B-C-D.sslip.io` for the address `A.B.C.D`.
+3. Give it a fixed public address and a host name that points to it. Without a domain, use `A-B-C-D.sslip.io` for the address `A.B.C.D` (it needs no account), or a free DuckDNS name pointed at the address. Several names can be given to the script, separated by commas.
 4. On the server:
 
    ```bash
@@ -122,7 +122,7 @@ The script installs Docker, adb and the kernel module package, loads binder now 
 
 Settings live in `/etc/android-web.env` (`MAX_SESSIONS`, `MAX_SESSIONS_PER_ADDRESS`, `DEVICE_CPUS`, `DEVICE_INTERNET`, `SESSION_IDLE_MS`, `SESSION_GRACE_MS`, `ACCESS_CODE`, `DEVICE_FPS`, `VIDEO_MAX_SIZE`, `VIDEO_CODEC_OPTIONS`, `VIDEO_BIT_RATE`, ...); restart with `sudo systemctl restart android-web`. Logs: `sudo journalctl -u android-web -f`. Health: `curl -s http://127.0.0.1:8080/healthz`.
 
-**Not yet proven:** the script has run several times on one server that already had Docker, Node.js and the Android image from earlier manual work. It has not been run on a brand-new server.
+**Proven on a brand-new server (5 Oct 2026):** on a freshly launched Ubuntu 24.04 machine with nothing installed, the script finished in 82 seconds with no errors on the first run. Straight after it, all three live tests passed (16, 16 and 12 checks), the page was served over HTTPS with a valid certificate, and after a reboot the public link answered again in 33 seconds with nobody logging in. The code was copied to that server from the working folder instead of with `git clone`; everything after that was the script alone.
 
 ## Tests
 
@@ -163,7 +163,7 @@ A security review of the finished system found a path from an anonymous visitor 
 - **Latency:** median 165 ms, 95th percentile 191 ms from touch to visible reaction, 40 taps (the documented run, on the full device). With the video at 540 x 960 (the current default) two runs in Clock-only mode gave medians of 132 and 131 ms, 95th percentile 151 and 153 ms. Method, conditions and all samples are in [LATENCY.md](LATENCY.md).
 - **Device start:** about 10 s from opening the link to live video in Clock-only mode (stages seen in the page: 5 % at 0.3 s, 20 % at 0.5 s, 35 % at 1.8 s, 55 % at 6.3 s, 75 % at 7.5 s, 80 % at 8.9 s, 100 % at 10.2 s). Earlier: 8.5 s from request to ready with the CPU limit and fences in place (one measurement); before them it was 6.5 s for a new device and about 7 s from "Start a new session" to live video.
 - **Memory:** about 600 MB per device.
-- **Reboot:** the site answered again 25 s after a server reboot, with no one logging in.
+- **Reboot:** the public link answered again 33 s after a reboot of the current server, with no one logging in (25 s on the earlier server).
 
 Raw numbers and the commands behind them are in [docs/notes/NOTES.md](docs/notes/NOTES.md).
 

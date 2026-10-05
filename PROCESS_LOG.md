@@ -1571,3 +1571,75 @@ The full pasted text is long and is not repeated here; it is in the session tran
 **Not verified:** Clock's "Change date & time" link under the new lock (it was tried by hand only under screen pinning); whether the unpin hint can still appear in some situation the AI did not try; the lock on any Android image other than this one.
 
 **Correction to the times in Entry 71 (added 11:13 IST):** the work ran from about 10:50 to 11:12, not 11:00 to 11:25. From here on the AI reads the clock before writing a heading.
+
+---
+
+## Entry 72 — Mon 5 Oct 2026, 11:39 IST
+
+**User prompt (verbatim):**
+
+> now setup duckdns to custom dns of mine
+
+**What the AI did:** nothing on the server yet. A DuckDNS name has to be created in the user's own DuckDNS account (sign-in is through the user's Google or GitHub account), which the AI cannot do. Gave the user the steps and asked for the name they choose. Told the user the AI does not need the DuckDNS token: the server's address is fixed (Elastic IP), so the name only has to be pointed at it once on the DuckDNS page, and the web server gets its certificate over the normal HTTPS check. Plan once the name is known: re-run the setup script with the new host name, keep the old sslip.io link working beside it, check the certificate and a session on the new link, update the README, demo script and the AI's notes.
+
+**Waiting on the user:** the DuckDNS name.
+
+---
+
+## Entry 73 — Mon 5 Oct 2026, 11:46 IST
+
+**User prompt (verbatim):**
+
+> https://yuga-android.duckdns.org/
+
+(The DuckDNS name asked for in Entry 72.)
+
+**What the AI did:**
+
+1. Checked that `yuga-android.duckdns.org` resolves to the server's address, 43.205.158.181.
+2. `infra/setup.sh`: the host name setting may now hold several names separated by commas (the web server's own syntax); the script's last line prints the first.
+3. Re-ran the setup script on the server with both names: `yuga-android.duckdns.org, 43-205-158-181.sslip.io`. Exit 0. Caddy obtained a certificate for the new name within a few seconds.
+4. Checked from the laptop: both names serve the page over HTTPS with a valid certificate; plain HTTP on the new name redirects to HTTPS; a real session through the new name went through every start-up stage, delivered video after 9.9 s and ended cleanly.
+5. README (live link, address row, setup steps) and the demo script now use the new name.
+
+**Not done:** the page was not opened in a browser on the new name (the check used a script as the client, with the browser's Origin header). The DuckDNS token was neither asked for nor used.
+
+---
+
+## Entry 74 — Mon 5 Oct 2026, 11:50 IST
+
+**User prompt (verbatim):**
+
+> now i am going to change my aws account. So tell the how i setup on new and remove the things from old account but it will use this only yuga-android.duckdns.org
+
+**What the AI did:** gave the user a step-by-step plan in chat; nothing was changed. Order proposed: launch a server in the new account and give it a fixed address; the AI installs and tests everything there under the new address's own sslip.io name while the public link still points at the old server; the user then changes the address on the DuckDNS page; the AI re-runs the setup with the DuckDNS name and checks the certificate and a session; only after that the user removes the old account's resources (terminate the instance, release the Elastic IP, check for leftover volumes). Pointed out that this run is also the missing test of the setup script on a brand-new server. Listed what the AI needs: the new address and the name of the new key file.
+
+**Waiting on the user:** the new server's address and key file.
+
+---
+
+## Entry 75 — Mon 5 Oct 2026, 11:58 to 12:07 IST
+
+**User prompt (verbatim):**
+
+> new elastic Ip : 13.126.173.153
+> key : heathtick
+> done
+
+**What the AI did:**
+
+1. Found the key as `C:\Users\yugaj\.ssh\healthtick.pem` (the message said "heathtick"; the file written today at 11:53 is `healthtick.pem`). The key for the old server, `healthtick-2.pem`, is no longer in that folder, so the AI can no longer reach the old server.
+2. Connected to the new server: Ubuntu 24.04.4, kernel 6.17.0-1017-aws, 2 CPUs, 8 GB, 29 GB disk, nothing installed (no Docker, no Node.js, no adb).
+3. **Setup script on a brand-new server (the open item C4):** copied the working folder over and ran `sudo SITE_HOST=13-126-173-153.sslip.io bash infra/setup.sh`. Exit 0 after 82 seconds, first run, no warnings or errors. All four services active.
+4. Live tests on the new server: session 16 of 16, restriction 16 of 16, security 12 of 12. Device ready times 9.3 s and 11.8 s. The page over HTTPS: 200 with a valid certificate; a request for `//` gets 400.
+5. Noticed that the DuckDNS name already pointed at the new address (the user's "done" included that step), which meant the public link was reaching a server that did not yet serve that name. Re-ran the setup with `yuga-android.duckdns.org, 13-126-173-153.sslip.io`; the certificate for the DuckDNS name was issued within seconds. Both names: 200, valid certificate, served from 13.126.173.153. A real session through the public name: all stages, video after 10.5 s, clean end.
+6. Reboot of the new server: the public link answered again 33 s after the reboot command, nobody logging in; all services active, binder and both firewall modules loaded, firewall rule present, security test passes again.
+7. README: new address, the setup script's "not yet proven" note replaced by what was proven, reboot figure.
+
+**Observed, not caused by the AI:** during the live tests two Clock-only sessions were opened on the new server from a browser (06:32:40 UTC), most likely the user looking at the new site. The tests passed regardless.
+
+**How long the public link was broken:** not measured. Between the user's DuckDNS change and step 5 the public name reached the new server without a certificate for it; the AI does not know when the user made the change.
+
+**Not verified:** the page in a real browser on the new server by the AI (only script clients and the three live tests); the setup script starting from `git clone` instead of a copied folder.
+
+**Left for the user:** terminate the old instance and release the old Elastic IP in the old account; a billing alert in the new account.

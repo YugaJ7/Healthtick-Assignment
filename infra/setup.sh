@@ -5,7 +5,8 @@
 # Usage (from the repo root on the server):
 #   sudo SITE_HOST=device.example.com bash infra/setup.sh
 #
-# SITE_HOST   public host name that points at this server (needed for HTTPS).
+# SITE_HOST   public host name that points at this server (needed for HTTPS). Several
+#             names can be given, separated by commas; the first is the main one.
 #             Leave it out to skip the web server and keep the app on 127.0.0.1:8080.
 # ACCESS_CODE optional; when set, visitors must enter it. Left out, the site is open to everyone.
 set -euo pipefail
@@ -100,6 +101,6 @@ step "Done"
 sleep 5
 systemctl --no-pager --lines=5 status android-web || true
 echo
-[ -n "$SITE_HOST" ] && echo "Open: https://${SITE_HOST}/"
+[ -n "$SITE_HOST" ] && echo "Open: https://${SITE_HOST%%,*}/"
 echo "Settings (session limit, optional access code): ${ENV_FILE}"
 echo "Health: curl -s http://127.0.0.1:8080/healthz"
