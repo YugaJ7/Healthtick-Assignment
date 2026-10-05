@@ -4,7 +4,9 @@ A real Android device, running on a server, that you watch and control from a we
 
 **Live: https://yuga-android.duckdns.org**
 
-**Demo video:** [docs/demo.mp4](docs/demo.mp4) (4 min 31 s).
+## Demo video
+
+https://github.com/user-attachments/assets/fdb605cd-016d-4dff-90d8-9e11b7640611
 
 No sign-in and nothing to install. Use a current Chrome or Edge on a computer (see [Browsers](#browsers)).
 
